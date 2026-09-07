@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
 
+from ue4ss_mcp_server.bridge import BridgeServer, BridgeState
+from ue4ss_mcp_server.bridge_install import get_or_create_token
+from ue4ss_mcp_server.bridge_install import install_bridge_mod as _install_bridge_mod
 from ue4ss_mcp_server.cache import ensure_ref_cached
 from ue4ss_mcp_server.compat import lookup_custom_game_config, lookup_known_fork
 from ue4ss_mcp_server.compat import lookup_patternsleuth_status
@@ -16,6 +19,9 @@ from ue4ss_mcp_server.upgrade_notes import DEFAULT_SOURCE_REF
 from ue4ss_mcp_server.upgrade_notes import get_upgrade_notes as _get_upgrade_notes
 
 mcp = MCPServer("ue4ss-mcp")
+
+_bridge_state = BridgeState()
+_bridge_server: BridgeServer | None = None
 
 # In-memory index cache keyed by (version, api): building it is cheap but
 # not free, and a session will typically call search_api/get_symbol
@@ -173,7 +179,31 @@ def list_known_forks(limit: int | None = None, cursor: str | None = None) -> dic
     return paginate(_list_known_forks(), limit, cursor)
 
 
+@mcp.tool()
+def install_bridge_mod(game_install_path: str) -> dict:
+    """Install the MCP bridge mod into a game's UE4SS Mods/ folder.
+
+    `game_install_path` is the UE4SS install directory (containing
+    UE4SS.dll and Mods/), not the game's root install folder. Explicit/
+    opt-in only -- the bridge is never installed automatically. Takes
+    effect on the next game launch or mod reload.
+    """
+    return _install_bridge_mod(game_install_path)
+
+
+@mcp.tool()
+def bridge_status() -> dict:
+    """Check whether a game is currently connected via the bridge mod,
+    and if so which UE4SS/engine version it reported on handshake.
+    Always safe to call -- reports not-connected rather than erroring.
+    """
+    return _bridge_state.snapshot()
+
+
 def main() -> None:
+    global _bridge_server
+    _bridge_server = BridgeServer(get_or_create_token(), _bridge_state)
+    _bridge_server.start()
     mcp.run()
 
 
