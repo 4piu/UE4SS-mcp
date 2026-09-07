@@ -14,10 +14,18 @@
   (`/Script/Engine.Actor`), not `find_object`'s short form.
 - `dump_and_index`'s `objects`/`sdk`/`uht` kinds can take a minute-plus
   and stall the game; `actors` is cheap.
-- `call_function`/`exec_lua` mutate live state; UE4SS checks argument
-  *count*, not necessarily type.
-- `bridge_status` is checked lazily — may show stale "connected" until
-  the next live call fails.
+- `call_function`/`exec_lua` mutate live state. UE4SS checks argument
+  *count* but not *type* — a count-correct call with the wrong Lua value
+  for a non-primitive parameter (FName/struct/object) can crash the
+  whole game with no catchable error and no crash dump. Only pass
+  primitives unless you've confirmed the real parameter type.
+- The bridge retries on a backoff (2s→30s ceiling) when this server
+  isn't reachable — a fresh game can take up to ~30s to show connected,
+  and a one-shot script that starts the server for a single call will
+  likely never see it connect at all. Keep one server process alive
+  across calls.
+- `bridge_status` is also checked lazily beyond that — may show stale
+  "connected" until the next live call fails.
 - This server won't tell you which UE4SS version/fork a game needs, or
   install UE4SS. Out of scope by design.
 

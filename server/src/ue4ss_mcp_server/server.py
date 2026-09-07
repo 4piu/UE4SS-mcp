@@ -206,6 +206,16 @@ def bridge_status() -> dict:
     """Check whether a game is currently connected via the bridge mod,
     and if so which UE4SS/engine version it reported on handshake.
     Always safe to call -- reports not-connected rather than erroring.
+
+    The bridge mod retries connecting on an exponential backoff (2s,
+    doubling to a 30s ceiling) whenever this server isn't reachable, so
+    after starting this server it can take up to ~30s for a
+    already-running game to show connected -- that's normal, not a
+    broken bridge. This server process also needs to stay alive for the
+    bridge to have anything to connect to: a one-shot script that starts
+    the server, makes one call, and exits will very likely see
+    `connected: false` every time, since the bridge just never got a
+    long-enough window to dial in.
     """
     return _bridge_state.snapshot()
 
@@ -290,6 +300,16 @@ def call_function(handle: str, function_name: str, args: list | None = None) -> 
     success (nested UObject return values come back as a handle, same as
     describe_object) or `{"error": "..."}` on failure, including
     `HANDLE_EXPIRED` for a stale handle.
+
+    DANGER, confirmed live: UE4SS validates argument *count* but not
+    argument *type*. A wrong parameter count fails cleanly with a
+    readable error. A count-correct call with the wrong Lua value for a
+    non-primitive parameter (an `FName`/struct/object where the UFunction
+    expects one) is NOT guaranteed to fail cleanly -- it can crash the
+    entire game process with no catchable Lua error and no crash dump at
+    all. Only pass plain numbers/booleans/strings for parameters you
+    haven't independently confirmed the real type of, and treat any
+    UFunction with non-primitive parameters as unsafe to guess at.
     """
     return _bridge_request("call_function", {"handle": handle, "function_name": function_name, "args": args or []})
 
@@ -493,6 +513,11 @@ def exec_lua(code: str) -> dict:
     truncated (`truncated: true` in the result) rather than flooding the
     response. Mutates live state and isn't logged/audited any
     differently from call_function -- use deliberately.
+
+    Same DANGER as call_function applies to any UFunction call your code
+    makes: a wrong-type (not wrong-count) argument for a non-primitive
+    parameter can crash the whole game with no catchable error and no
+    crash dump. See call_function's docstring.
     """
     return _bridge_request("exec_lua", {"code": code})
 
