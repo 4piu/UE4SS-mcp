@@ -60,3 +60,15 @@ def parse_log(text: str, limit: int | None = None, cursor: str | None = None) ->
         "warnings_count": len(_WARNING_RE.findall(text)),
         "errors": paginate(errors, limit, cursor),
     }
+
+
+def search_log(text: str, query: str, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Case-insensitive substring search over arbitrary log text -- for
+    everything parse_log's structured fields don't cover, most notably a
+    mod's own print() output. Not merged into parse_log itself: that
+    tool's job is structured extraction, this one is free-text search,
+    same split as search_api vs. get_symbol elsewhere in this project.
+    """
+    q = query.lower()
+    matches = [{"line": i, "text": line} for i, line in enumerate(text.splitlines(), start=1) if q in line.lower()]
+    return paginate(matches, limit, cursor)

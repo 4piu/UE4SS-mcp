@@ -17,6 +17,7 @@ from ue4ss_mcp_server.docs_index import DocEntry, build_index
 from ue4ss_mcp_server.dump_index import DumpEntry, parse_actor_csv, parse_header_dir, parse_object_dump
 from ue4ss_mcp_server.dump_index import search_dump_entries as _search_dump_entries
 from ue4ss_mcp_server.log_parse import parse_log as _parse_log
+from ue4ss_mcp_server.log_parse import search_log as _search_log
 from ue4ss_mcp_server.mod_management import disable_mod as _disable_mod
 from ue4ss_mcp_server.mod_management import enable_mod as _enable_mod
 from ue4ss_mcp_server.search import find_symbol, search_symbols
@@ -557,6 +558,22 @@ def parse_log(path: str | None = None, text: str | None = None, limit: int | Non
     if isinstance(text_or_error, dict):
         return text_or_error
     return _parse_log(text_or_error, limit, cursor)
+
+
+@mcp.tool()
+def search_log(query: str, path: str | None = None, text: str | None = None, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Search a UE4SS.log for a substring -- e.g. to confirm your own
+    mod's `print()` output actually appeared, which parse_log's
+    structured fields (mods/warnings-count/timestamped-Error-lines)
+    can't show you. Case-insensitive, paginated like every other
+    search-shaped tool here. Pass exactly one of `path` or `text`.
+
+    Returns a paginated envelope of `{line, text}` matches.
+    """
+    text_or_error = _read_path_or_text(path, text)
+    if isinstance(text_or_error, dict):
+        return text_or_error
+    return _search_log(text_or_error, query, limit, cursor)
 
 
 @mcp.tool()

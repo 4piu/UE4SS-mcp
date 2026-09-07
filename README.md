@@ -28,7 +28,7 @@ enable the live tools below.
 
 **Live** (need a connected game): `bridge_status`, `find_object`, `describe_object`, `call_function`, `register_hook`, `unregister_hook`, `watch_new_object`, `poll_hook_events`, `reload_mod`, `dump_and_index`, `search_dump`, `exec_lua`
 
-**Log/crash** (no game needed): `parse_log`, `parse_crash`
+**Log/crash** (no game needed): `parse_log`, `search_log`, `parse_crash`
 
 Every list-shaped tool is paginated (`{items, returned, total_matched, truncated, cursor}`) — nothing dumps a whole object graph or log at once. Full usage details are in each tool's own description.
 

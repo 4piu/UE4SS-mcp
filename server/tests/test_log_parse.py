@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from ue4ss_mcp_server.log_parse import parse_log
+from ue4ss_mcp_server.log_parse import parse_log, search_log
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hogwarts_legacy_ue4ss.log"
+SCRIPT_ERROR_FIXTURE = Path(__file__).parent / "fixtures" / "crash_samples" / "ue4ss_log_script_error_tail.log"
 
 
 def test_parse_log_real_clean_log():
@@ -57,3 +58,32 @@ def test_parse_log_errors_are_paginated():
     assert result["errors"]["returned"] == 2
     assert result["errors"]["total_matched"] == 5
     assert result["errors"]["truncated"] is True
+
+
+def test_search_log_finds_a_mods_own_print_output():
+    # The exact real-world use case this tool exists for: parse_log's
+    # structured fields never surface a mod's own print() line, but a
+    # fresh-eyes agent test's suggested verification method for "did my
+    # mod actually run" was exactly this.
+    text = SCRIPT_ERROR_FIXTURE.read_text(encoding="utf-8")
+    result = search_log(text, "Found PlayerController")
+
+    assert result["returned"] == 1
+    assert result["total_matched"] == 1
+    assert "[MCPTestMod] Found PlayerController" in result["items"][0]["text"]
+    assert result["items"][0]["line"] == 2
+
+
+def test_search_log_is_case_insensitive_and_paginated():
+    text = "\n".join(f"[2026-09-07 00:00:00] hello world {i}" for i in range(5))
+    result = search_log(text, "HELLO", limit=2)
+
+    assert result["returned"] == 2
+    assert result["total_matched"] == 5
+    assert result["truncated"] is True
+
+
+def test_search_log_no_match_returns_empty():
+    result = search_log("nothing interesting here", "does-not-exist")
+    assert result["returned"] == 0
+    assert result["total_matched"] == 0
