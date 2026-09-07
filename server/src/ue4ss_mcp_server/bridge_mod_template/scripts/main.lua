@@ -14,6 +14,13 @@
 -- must happen there, then the response is written and the next read is
 -- scheduled. No native JSON library ships with UE4SS's Lua, so this file
 -- includes a small self-contained encoder/decoder below.
+--
+-- M5: adds register_hook/unregister_hook/watch_new_object/
+-- poll_hook_events/reload_mod. Hook and watch fires happen at
+-- unpredictable times (whenever the game calls the hooked function or
+-- constructs the watched class) rather than in response to a request,
+-- so they're buffered here and drained via poll_hook_events -- nothing
+-- is ever pushed to the server outside of a request's own response.
 
 local PIPE_NAME = "\\\\.\\pipe\\ue4ss-mcp"
 local TOKEN = "__BRIDGE_TOKEN__"
@@ -412,10 +419,215 @@ local function op_call_function(params)
     return true, { result = serialize_value(result_or_err) }
 end
 
+--------------------------------------------------------------------------
+-- Hook/watch event buffers. RegisterHook/NotifyOnNewObject fire whenever
+-- the game calls the hooked function or constructs the watched class --
+-- unpredictable timing, potentially many times per frame. Rather than
+-- push each fire over the wire (which the rest of this protocol
+-- deliberately never does), fires are buffered here and drained via the
+-- normal pull-based poll_hook_events request, same as every other op.
+--
+-- Buffers use a monotonic sequence number, not a plain array index, so
+-- that a cursor issued before an eviction still means the same thing
+-- afterward -- evicting from the front of a plain array (to cap memory)
+-- would silently shift every later index and invalidate outstanding
+-- cursors.
+--------------------------------------------------------------------------
+
+local _MAX_BUFFERED_EVENTS = 200
+
+local hooks = {}
+local watches = {}
+local hook_counter = 0
+local watch_counter = 0
+
+local function new_event_buffer()
+    return { events = {}, oldest_seq = 1, newest_seq = 0, dropped = 0 }
+end
+
+local function push_event(buf, event)
+    buf.newest_seq = buf.newest_seq + 1
+    buf.events[buf.newest_seq] = event
+    if (buf.newest_seq - buf.oldest_seq + 1) > _MAX_BUFFERED_EVENTS then
+        buf.events[buf.oldest_seq] = nil
+        buf.oldest_seq = buf.oldest_seq + 1
+        buf.dropped = buf.dropped + 1
+    end
+end
+
+-- `cursor` is the last sequence number the caller has already seen (0 or
+-- nil = nothing seen yet), NOT a plain offset -- and unlike the
+-- snapshot-style tools, the returned cursor is never nil, since there's
+-- always a "resume from here next time" position for a live stream even
+-- when nothing new fired this poll.
+local function poll_event_buffer(buf, cursor, limit)
+    local after = math.max(tonumber(cursor) or 0, buf.oldest_seq - 1)
+    local items = {}
+    local seq = after + 1
+    while seq <= buf.newest_seq and #items < limit do
+        table.insert(items, buf.events[seq])
+        seq = seq + 1
+    end
+    local truncated = seq <= buf.newest_seq
+    local dropped = buf.dropped
+    buf.dropped = 0
+    return {
+        items = items,
+        returned = #items,
+        total_matched = buf.newest_seq - buf.oldest_seq + 1,
+        truncated = truncated,
+        cursor = tostring(seq - 1),
+        dropped_since_last_poll = dropped,
+    }
+end
+
+local function serialize_param(p)
+    local ok, v = pcall(function() return p:get() end)
+    return serialize_value(ok and v or nil)
+end
+
+local function op_register_hook(params)
+    local ufunction_name = params.ufunction_name
+    if not ufunction_name then
+        return false, "register_hook requires 'ufunction_name'"
+    end
+    local requested_when = params.when or "both"
+
+    -- RegisterHook's callback-slot meaning depends on the path: for
+    -- native (/Script/) UFunctions, slot 1 = pre and slot 2 = post; for
+    -- everything else (Blueprint functions), slot 1 actually fires
+    -- *after* the call and slot 2 does nothing at all. Tagging events by
+    -- what actually happens (not by which slot fired) keeps `when` in
+    -- the recorded event honest regardless of function type.
+    local is_native = ufunction_name:sub(1, 8) == "/Script/"
+
+    hook_counter = hook_counter + 1
+    local hook_id = string.format("hook_%08x", hook_counter)
+    local buf = new_event_buffer()
+
+    local function record(tag, context, ...)
+        if requested_when ~= "both" and requested_when ~= tag then
+            return
+        end
+        local args = { ... }
+        local serialized_args = {}
+        for i, p in ipairs(args) do
+            serialized_args[i] = serialize_param(p)
+        end
+        push_event(buf, {
+            when = tag,
+            context = serialize_param(context),
+            args = serialized_args,
+        })
+    end
+
+    local function slot1_cb(context, ...)
+        record(is_native and "pre" or "post", context, ...)
+    end
+    local function slot2_cb(context, ...)
+        -- Only meaningful for native (/Script/) paths -- a no-op call
+        -- for everything else, matching RegisterHook's own semantics.
+        record("post", context, ...)
+    end
+
+    local pre_id, post_id = RegisterHook(ufunction_name, slot1_cb, slot2_cb)
+    if pre_id == nil then
+        return false, string.format("RegisterHook failed for '%s' -- does it exist in memory yet?", ufunction_name)
+    end
+
+    hooks[hook_id] = { buf = buf, ufunction_name = ufunction_name, pre_id = pre_id, post_id = post_id }
+    return true, { hook_id = hook_id }
+end
+
+local function op_unregister_hook(params)
+    local id = params.hook_id
+    local hook = hooks[id]
+    if hook then
+        -- Stops the native hook, but deliberately doesn't drop `hook`
+        -- itself -- any events it already buffered but that haven't been
+        -- polled yet must stay reachable, or unregistering would silently
+        -- discard data the agent never got a chance to see.
+        if not hook.unregistered then
+            pcall(UnregisterHook, hook.ufunction_name, hook.pre_id, hook.post_id)
+            hook.unregistered = true
+        end
+        return true, { unregistered = true }
+    end
+    local watch = watches[id]
+    if watch then
+        -- NotifyOnNewObject has no direct unregister call -- this flag is
+        -- what the callback checks on its next fire to actually stop
+        -- (see op_watch_new_object). Same "keep the buffer" reasoning.
+        watch.unregistered = true
+        return true, { unregistered = true }
+    end
+    return false, "unknown hook_id/watch_id"
+end
+
+local function op_watch_new_object(params)
+    local class_name = params.class_name
+    if not class_name then
+        return false, "watch_new_object requires 'class_name'"
+    end
+
+    watch_counter = watch_counter + 1
+    local watch_id = string.format("watch_%08x", watch_counter)
+    watches[watch_id] = { buf = new_event_buffer(), unregistered = false }
+
+    NotifyOnNewObject(class_name, function(obj)
+        local watch = watches[watch_id]
+        if watch == nil or watch.unregistered then
+            return true
+        end
+        push_event(watch.buf, { object = serialize_value(obj) })
+        return false
+    end)
+
+    return true, { watch_id = watch_id }
+end
+
+local function op_poll_hook_events(params)
+    local id = params.hook_id
+    local buf
+    if hooks[id] then
+        buf = hooks[id].buf
+    elseif watches[id] then
+        buf = watches[id].buf
+    end
+    if not buf then
+        return false, "unknown hook_id/watch_id"
+    end
+    local limit = math.min(tonumber(params.limit) or 20, 200)
+    return true, poll_event_buffer(buf, params.cursor, limit)
+end
+
+local _SELF_MOD_NAME = "UE4SSMCPBridge"
+
+local function op_reload_mod(params)
+    local mod_name = params.mod_name
+    if not mod_name then
+        return false, "reload_mod requires 'mod_name'"
+    end
+    -- Both queue for the next update cycle rather than acting
+    -- immediately, so returning normally here (letting the response for
+    -- *this* request go out first) is safe even when reloading ourselves.
+    if mod_name == _SELF_MOD_NAME then
+        RestartCurrentMod()
+    else
+        RestartMod(mod_name)
+    end
+    return true, { queued = true, mod_name = mod_name }
+end
+
 local OPS = {
     find_object = op_find_object,
     describe_object = op_describe_object,
     call_function = op_call_function,
+    register_hook = op_register_hook,
+    unregister_hook = op_unregister_hook,
+    watch_new_object = op_watch_new_object,
+    poll_hook_events = op_poll_hook_events,
+    reload_mod = op_reload_mod,
 }
 
 local function handle_request(req)

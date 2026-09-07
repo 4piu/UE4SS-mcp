@@ -274,6 +274,78 @@ def call_function(handle: str, function_name: str, args: list | None = None) -> 
     return _bridge_request("call_function", {"handle": handle, "function_name": function_name, "args": args or []})
 
 
+@mcp.tool()
+def register_hook(ufunction_name: str, when: str = "both") -> dict:
+    """Register a callback on a UFunction so its calls can be observed
+    without polling describe_object in a loop. `ufunction_name` is a full
+    UFunction path (e.g. "/Script/Engine.PlayerController:ClientRestart");
+    for RegisterHook to succeed the function must already exist in memory
+    (usually true for anything from a loaded class). `when` is "pre",
+    "post", or "both" -- for a Blueprint function (a path that doesn't
+    start with "/Script/") only "post" is meaningful, since UE4SS itself
+    doesn't support a pre-hook there.
+
+    Fires are NOT pushed to you -- they're buffered on the bridge side
+    and drained by calling poll_hook_events with the returned `hook_id`,
+    consistent with every other tool here never sending unsolicited data.
+    Call unregister_hook when done to stop buffering and free the hook.
+    """
+    return _bridge_request("register_hook", {"ufunction_name": ufunction_name, "when": when})
+
+
+@mcp.tool()
+def unregister_hook(hook_id: str) -> dict:
+    """Stop a hook registered via register_hook or a watch registered via
+    watch_new_object -- same tool for both, since they're both just an
+    opaque id for something buffering events on the bridge side.
+    """
+    return _bridge_request("unregister_hook", {"hook_id": hook_id})
+
+
+@mcp.tool()
+def watch_new_object(class_name: str) -> dict:
+    """Get notified when a new instance of `class_name` is constructed
+    (inheritance-aware -- watching a base class also catches derived
+    classes), without polling find_object in a loop. `class_name` doesn't
+    need to exist yet when you call this.
+
+    Fires are buffered and pulled via poll_hook_events with the returned
+    `watch_id`, same pull model as register_hook. Call unregister_hook
+    when done -- UE4SS's underlying NotifyOnNewObject has no direct
+    cancel, so this takes effect from the class's next construction
+    onward rather than immediately.
+    """
+    return _bridge_request("watch_new_object", {"class_name": class_name})
+
+
+@mcp.tool()
+def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Drain buffered fire events for a hook (register_hook) or watch
+    (watch_new_object). Unlike every other paginated tool here, `cursor`
+    is never null in the response -- it's always "resume from here next
+    time" for this live stream, not "no more results". Pass it back on
+    your next poll to only see events fired since the last one. A
+    `dropped_since_last_poll > 0` means fires happened faster than you
+    polled and the oldest ones were evicted (buffer caps at 200 events
+    per hook/watch) -- poll more often if that matters for your use case.
+    """
+    return _bridge_request("poll_hook_events", {"hook_id": hook_id, "limit": limit, "cursor": cursor})
+
+
+@mcp.tool()
+def reload_mod(mod_name: str) -> dict:
+    """Hot-reload a Lua mod by name (e.g. after editing its script) via
+    RestartMod, or this bridge's own mod via RestartCurrentMod if
+    `mod_name` matches it. Queued for the next update cycle, not
+    immediate. Reloading the bridge mod itself destroys its Lua state
+    (and with it every handle/hook/watch from the current session) --
+    this response arrives fine beforehand, but expect bridge_status to
+    briefly show disconnected while it restarts, then reconnect on its
+    own like any other relaunch.
+    """
+    return _bridge_request("reload_mod", {"mod_name": mod_name})
+
+
 def main() -> None:
     global _bridge_server
     _bridge_server = BridgeServer(get_or_create_token(), _bridge_state)
