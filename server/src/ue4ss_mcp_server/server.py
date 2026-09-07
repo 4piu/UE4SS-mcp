@@ -220,12 +220,22 @@ def bridge_status() -> dict:
     return _bridge_state.snapshot()
 
 
-def _bridge_request(op: str, params: dict) -> dict:
+def _bridge_request(op: str, params: dict, timeout: float | None = None) -> dict:
     assert _bridge_server is not None
-    response = _bridge_server.send_request(op, params)
+    kwargs = {} if timeout is None else {"timeout": timeout}
+    response = _bridge_server.send_request(op, params, **kwargs)
     if not response.get("ok"):
         return {"error": response.get("error", "unknown bridge error")}
     return response.get("result", {})
+
+
+# DumpAllObjects/GenerateSDK in particular are expected to take a while
+# on a real game (they scale with how much is currently loaded) -- the
+# default request timeout exists to catch a genuinely wedged bridge, not
+# to cut off a slow-but-legitimate native call. Timing out here would
+# force-disconnect the bridge for no good reason on top of whatever the
+# dump itself is doing to the game thread.
+_DUMP_REQUEST_TIMEOUT_S = 180.0
 
 
 @mcp.tool()
@@ -434,7 +444,7 @@ def dump_and_index(kind: str, game_install_path: str | None = None) -> dict:
     if install_dir is None:
         return {"error": "game_install_path not given, and install_bridge_mod hasn't been called this session"}
 
-    response = _bridge_request("dump_and_index", {"kind": kind})
+    response = _bridge_request("dump_and_index", {"kind": kind}, timeout=_DUMP_REQUEST_TIMEOUT_S)
     if "error" in response:
         return response
 
