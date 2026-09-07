@@ -528,21 +528,21 @@ def parse_log(path: str | None = None, text: str | None = None, limit: int | Non
 
 @mcp.tool()
 def parse_crash(path: str | None = None, text: str | None = None) -> dict:
-    """Parse a crash artifact -- either a native `CrashContext.runtime-xml`
-    (written by Unreal's own crash reporter under
+    """Parse a crash artifact: a native `CrashContext.runtime-xml` (under
     `<Game>/Saved/Crashes/<id>/` after an unhandled exception actually
-    killed the process) or a Lua-level error+traceback block as UE4SS
-    itself writes it directly into UE4SS.log (written whenever
-    `lua_pcall` catches a runtime error inside a mod -- far more common,
-    since most Lua mod bugs never produce a native crash report at all).
-    Auto-detected from the content; pass exactly one of `path` or `text`.
+    killed the process), or either of two Lua-level error+traceback
+    shapes UE4SS itself writes into UE4SS.log -- one from its own
+    call_function/exec_lua wrapper catching a runtime error, one from a
+    mod's own top-level script or an unguarded hook callback throwing an
+    uncaught error. Auto-detected from the content; pass exactly one of
+    `path` or `text`.
 
-    Returns `{exception_info, thread, callstack}`. The two source formats'
-    `callstack` shapes are genuinely different, not forced into one fake
-    shape: structured `{module, base, offset}` frames for a native crash,
-    plain source-line strings for a Lua traceback. Capped at 100 frames.
-    Never surfaces a `CommandLine` field even if the input has one --
-    confirmed firsthand that a real one contains actual auth tokens.
+    Returns `{exception_info, thread, callstack}`. `callstack` shape
+    depends on the source: structured `{module, base, offset}` frames for
+    a native crash, plain source-line strings for a Lua traceback -- not
+    forced into one fake-common shape. Never surfaces a `CommandLine`
+    field even if the input has one -- confirmed firsthand that a real
+    one contains actual auth tokens.
     """
     text_or_error = _read_path_or_text(path, text)
     if isinstance(text_or_error, dict):

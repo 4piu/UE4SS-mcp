@@ -1,0 +1,11 @@
+[2026-09-07 16:19:35.5109555] Starting Lua mod 'MCPTestMod'
+[2026-09-07 16:19:35.5179486] [Lua] [MCPTestMod] Found PlayerController: BP_Phoenix_Player_Controller_C /Game/Levels/Overland/Overland.Overland:PersistentLevel.BP_Phoenix_Player_Controller_C_2147460262
+[2026-09-07 16:19:35.5183994] Error executing script: ...ix\Binaries\Win64\ue4ss\Mods\MCPTestMod\Scripts\main.lua:14: [UFunction::setup_metamethods -> __call] UFunction expected 3 parameters, received 1
+stack traceback:
+	[C]: in method 'ClientMessage'
+	...ix\Binaries\Win64\ue4ss\Mods\MCPTestMod\Scripts\main.lua:14: in main chunk
+stack traceback:
+	[C]: in method 'ClientMessage'
+	...ix\Binaries\Win64\ue4ss\Mods\MCPTestMod\Scripts\main.lua:14: in main chunk
+[2026-09-07 16:19:35.5186148] Failed to execute main script: D:\Program Files\Epic Games\HogwartsLegacy\Phoenix\Binaries\Win64\ue4ss\Mods\MCPTestMod\Scripts\main.lua
+[2026-09-07 16:19:35.5187243] Starting Lua mod 'Keybinds'

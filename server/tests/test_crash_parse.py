@@ -45,6 +45,29 @@ def test_parse_lua_traceback_real_sample():
     assert any("skipping 376 levels" in frame for frame in result["callstack"])
 
 
+def test_parse_lua_script_error_real_sample():
+    # A second, distinct real format the original parser didn't
+    # recognize at all -- found by a fresh-eyes agent test calling a
+    # UFunction with the wrong argument count, which raised ValueError
+    # against this exact, valid input before the fix.
+    text = (FIXTURES / "ue4ss_log_script_error_tail.log").read_text(encoding="utf-8")
+    result = parse_crash(text)
+
+    assert result["thread"] is None
+    assert result["exception_info"]["script_path"].endswith("MCPTestMod\\Scripts\\main.lua")
+    assert result["exception_info"]["line"] == 14
+    assert "UFunction expected 3 parameters, received 1" in result["exception_info"]["error_message"]
+    assert "lua_error_type" not in result["exception_info"]
+    assert "source" not in result["exception_info"]
+
+    # UE4SS repeats the "stack traceback:" block verbatim for this
+    # format -- only the first copy should be captured, not both.
+    assert result["callstack"] == [
+        "[C]: in method 'ClientMessage'",
+        "...ix\\Binaries\\Win64\\ue4ss\\Mods\\MCPTestMod\\Scripts\\main.lua:14: in main chunk",
+    ]
+
+
 def test_parse_crash_unrecognized_input_raises():
     with pytest.raises(ValueError):
         parse_crash("this is not a crash artifact at all")
