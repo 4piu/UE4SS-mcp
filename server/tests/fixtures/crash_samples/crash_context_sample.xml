@@ -1,0 +1,91 @@
+<?xml version='1.0' encoding='utf-8'?>
+<FGenericCrashContext>
+  <RuntimeProperties>
+    <CrashVersion>3</CrashVersion>
+    <ExecutionGuid>25E705374AD438C56284879AB8E822D4</ExecutionGuid>
+    <CrashGUID>UE4CC-Windows-2CD077244F37044BABFD739089EBAA25_0000</CrashGUID>
+    <IsEnsure>false</IsEnsure>
+    <IsAssert>false</IsAssert>
+    <CrashType>Crash</CrashType>
+    <ErrorMessage>Unhandled exception</ErrorMessage>
+    <CrashReporterMessage />
+    <ProcessId>24672</ProcessId>
+    <SecondsSinceStart>3949</SecondsSinceStart>
+    <IsInternalBuild>false</IsInternalBuild>
+    <IsPerforceBuild>false</IsPerforceBuild>
+    <IsSourceDistribution>false</IsSourceDistribution>
+    <GameName>UE4-Phoenix</GameName>
+    <ExecutableName>HogwartsLegacy</ExecutableName>
+    <BuildConfiguration>Shipping</BuildConfiguration>
+    <GameSessionID />
+    <Symbols>1.0.2013408-Win64-Shipping</Symbols>
+    <PlatformName>WindowsNoEditor</PlatformName>
+    <PlatformNameIni>Windows</PlatformNameIni>
+    <EngineMode>Game</EngineMode>
+    <EngineModeEx>Unset</EngineModeEx>
+    <DeploymentName>fa4240e57a3c46b39f169041b7811293</DeploymentName>
+    <EngineVersion>4.27.2-2013408+++stream+Main_TeamCity_Code</EngineVersion>
+    <CommandLine>[REDACTED -- contains real auth tokens/user info]</CommandLine>
+    <LanguageLCID>0</LanguageLCID>
+    <AppDefaultLocale>en-US</AppDefaultLocale>
+    <BuildVersion>1.0.2013408</BuildVersion>
+    <IsUE4Release>true</IsUE4Release>
+    <IsRequestingExit>false</IsRequestingExit>
+    <BaseDir>D:/Program Files/Epic Games/HogwartsLegacy/Phoenix/Binaries/Win64/</BaseDir>
+    <RootDir>D:/Program Files/Epic Games/HogwartsLegacy/</RootDir>
+    <SourceContext />
+    <UserDescription />
+    <UserActivityHint />
+    <CrashDumpMode>0</CrashDumpMode>
+    <GameStateName>GameState</GameStateName>
+    <Misc.NumberOfCores>8</Misc.NumberOfCores>
+    <Misc.NumberOfCoresIncludingHyperthreads>16</Misc.NumberOfCoresIncludingHyperthreads>
+    <Misc.Is64bitOperatingSystem>1</Misc.Is64bitOperatingSystem>
+    <Misc.CPUVendor>AuthenticAMD</Misc.CPUVendor>
+    <Misc.CPUBrand>AMD Ryzen 7 9800X3D 8-Core Processor</Misc.CPUBrand>
+    <Misc.PrimaryGPUBrand>NVIDIA GeForce RTX 4080 SUPER</Misc.PrimaryGPUBrand>
+    <Misc.OSVersionMajor>Windows 10 Enterprise (Build 26200, Version 25H2)</Misc.OSVersionMajor>
+    <Misc.OSVersionMinor />
+    <MemoryStats.TotalPhysical>68351500288</MemoryStats.TotalPhysical>
+    <MemoryStats.TotalVirtual>140737488224256</MemoryStats.TotalVirtual>
+    <MemoryStats.PageSize>4096</MemoryStats.PageSize>
+    <MemoryStats.TotalPhysicalGB>64</MemoryStats.TotalPhysicalGB>
+    <MemoryStats.AvailablePhysical>0</MemoryStats.AvailablePhysical>
+    <MemoryStats.AvailableVirtual>0</MemoryStats.AvailableVirtual>
+    <MemoryStats.UsedPhysical>0</MemoryStats.UsedPhysical>
+    <MemoryStats.PeakUsedPhysical>0</MemoryStats.PeakUsedPhysical>
+    <MemoryStats.UsedVirtual>0</MemoryStats.UsedVirtual>
+    <MemoryStats.PeakUsedVirtual>0</MemoryStats.PeakUsedVirtual>
+    <MemoryStats.bIsOOM>0</MemoryStats.bIsOOM>
+    <MemoryStats.OOMAllocationSize>0</MemoryStats.OOMAllocationSize>
+    <MemoryStats.OOMAllocationAlignment>0</MemoryStats.OOMAllocationAlignment>
+    <NumMinidumpFramesToIgnore>2</NumMinidumpFramesToIgnore>
+    <CallStack />
+    <PCallStack>HogwartsLegacy 0x0000000140000000 + 3c27f38 HogwartsLegacy 0x0000000140000000 + 56ec4df HogwartsLegacy 0x0000000140000000 + 5a44f63 HogwartsLegacy 0x0000000140000000 + 5a2f423 HogwartsLegacy 0x0000000140000000 + 5d886a9 UE4SS 0x00007ffec85d0000 + 49bb35 HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84</PCallStack>
+    <PCallStackHash>FF7AD484B8AFA5D78887D29CC337BA114EB98700</PCallStackHash>
+    <Threads>
+      <Thread>
+        <CallStack>ntdll 0x00007fff5b380000 + 1600e4 KERNELBASE 0x00007fff58730000 + 1c11f HogwartsLegacy 0x0000000140000000 + 6214b84 HogwartsLegacy 0x0000000140000000 + 3a3dee0 HogwartsLegacy 0x0000000140000000 + 68950ae vcruntime140 0x00007fff2e230000 + e5cf ntdll 0x00007fff5b380000 + 16479f ntdll 0x00007fff5b380000 + 45e97 ntdll 0x00007fff5b380000 + 1640de vcruntime140 0x00007fff2e230000 + fbbb HogwartsLegacy 0x0000000140000000 + efabed HogwartsLegacy 0x0000000140000000 + 3c27f38 HogwartsLegacy 0x0000000140000000 + 56ec4df HogwartsLegacy 0x0000000140000000 + 5a44f63 HogwartsLegacy 0x0000000140000000 + 5a2f423 HogwartsLegacy 0x0000000140000000 + 5d886a9 UE4SS 0x00007ffec85d0000 + 49bb35 HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb UE4SS 0x00007ffec85d0000 + 2c31ba UE4SS 0x00007ffec85d0000 + b94054 UE4SS 0x00007ffec85d0000 + b98ddc UE4SS 0x00007ffec85d0000 + c68a6e UE4SS 0x00007ffec85d0000 + c67c5a UE4SS 0x00007ffec85d0000 + c7373b UE4SS 0x00007ffec85d0000 + c67439 UE4SS 0x00007ffec85d0000 + c681c3 UE4SS 0x00007ffec85d0000 + c67a84 UE4SS 0x00007ffec85d0000 + c5fb3c UE4SS 0x00007ffec85d0000 + b95705 UE4SS 0x00007ffec85d0000 + 2e039d UE4SS 0x00007ffec85d0000 + 2e0449 UE4SS 0x00007ffec85d0000 + 2dfe92 UE4SS 0x00007ffec85d0000 + 316ee3 UE4SS 0x00007ffec85d0000 + 49b06e UE4SS 0x00007ffec85d0000 + 49bafc HogwartsLegacy 0x0000000140000000 + 3ac91a9 HogwartsLegacy 0x0000000140000000 + 3c40e9d HogwartsLegacy 0x0000000140000000 + 5507dcb</CallStack>
+        <IsCrashed>true</IsCrashed>
+        <Registers />
+        <ThreadID>30952</ThreadID>
+        <ThreadName>GameThread</ThreadName>
+      </Thread>
+      <Thread>
+        <CallStack>ntdll 0x00007fff5b380000 + 1600e4 KERNELBASE 0x00007fff58730000 + 1c11f HogwartsLegacy 0x0000000140000000 + 3a52c5d HogwartsLegacy 0x0000000140000000 + 38feb01 HogwartsLegacy 0x0000000140000000 + 3900a0c HogwartsLegacy 0x0000000140000000 + 3a50d67 HogwartsLegacy 0x0000000140000000 + 3a4ae91 KERNEL32 0x00007fff5a320000 + 2e957 ntdll 0x00007fff5b380000 + aad6c</CallStack>
+        <IsCrashed>false</IsCrashed>
+        <Registers />
+        <ThreadID>25112</ThreadID>
+        <ThreadName>TaskGraphThreadNP 0</ThreadName>
+      </Thread>
+    </Threads>
+    <TimeOfCrash>639244023746780000</TimeOfCrash>
+    <bAllowToBeContacted>1</bAllowToBeContacted>
+    <EpicAccountId>c5ed5445828e40069d1a55739f3e9cbf</EpicAccountId>
+    <UserName />
+    <LoginId>a0925500402beb63be7399be5292e1ef</LoginId>
+    <PlatformFullName>Win64 [Windows 10 Enterprise (Build 26200, Version 25H2)  64b]</PlatformFullName>
+    <CrashReportClientVersion>1.0</CrashReportClientVersion>
+    <Modules>[TRIMMED for fixture -- real file lists ~40 loaded DLL paths]</Modules>
+  </RuntimeProperties>
+</FGenericCrashContext>

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -15,10 +15,12 @@ from ue4ss_mcp_server.compat import lookup_custom_game_config, lookup_known_fork
 from ue4ss_mcp_server.compat import lookup_patternsleuth_status
 from ue4ss_mcp_server.compat import list_known_forks as _list_known_forks
 from ue4ss_mcp_server.context import resolve_context as _resolve_context
+from ue4ss_mcp_server.crash_parse import parse_crash as _parse_crash
 from ue4ss_mcp_server.docs_index import DocEntry, build_index
 from ue4ss_mcp_server.dump_index import DumpEntry, parse_actor_csv, parse_header_dir, parse_object_dump
 from ue4ss_mcp_server.dump_index import search_dump_entries as _search_dump_entries
 from ue4ss_mcp_server.envelope import paginate
+from ue4ss_mcp_server.log_parse import parse_log as _parse_log
 from ue4ss_mcp_server.search import find_symbol, search_symbols
 from ue4ss_mcp_server.upgrade_notes import DEFAULT_SOURCE_REF
 from ue4ss_mcp_server.upgrade_notes import get_upgrade_notes as _get_upgrade_notes
@@ -491,6 +493,62 @@ def exec_lua(code: str) -> dict:
     differently from call_function -- use deliberately.
     """
     return _bridge_request("exec_lua", {"code": code})
+
+
+def _read_path_or_text(path: str | None, text: str | None) -> str | dict:
+    if text is not None:
+        return text
+    if path is not None:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    return {"error": "either 'path' or 'text' is required"}
+
+
+@mcp.tool()
+def parse_log(path: str | None = None, text: str | None = None, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Parse a UE4SS.log (no live game/bridge needed -- works on any log
+    file, including one from a game that already closed). Pass exactly
+    one of `path` or `text`.
+
+    Returns `{version, build_sha, channel, game}` (the same startup-banner
+    fields resolve_context extracts), `mods` (every mod UE4SS attempted to
+    start, `{name, kind: "lua"|"cpp"|"unknown", enabled}` -- `unknown`
+    kind means it was found disabled in mods.txt before UE4SS ever
+    determined its type), `ps_scan_attempts` (Patternsleuth AOB scan
+    attempts -- more than 1 means something needed retrying),
+    `ps_signatures_found`, `warnings_count`, and a paginated `errors`
+    envelope of every timestamped "Error:"/"Fatal Error:" line.
+    """
+    text_or_error = _read_path_or_text(path, text)
+    if isinstance(text_or_error, dict):
+        return text_or_error
+    return _parse_log(text_or_error, limit, cursor)
+
+
+@mcp.tool()
+def parse_crash(path: str | None = None, text: str | None = None) -> dict:
+    """Parse a crash artifact -- either a native `CrashContext.runtime-xml`
+    (written by Unreal's own crash reporter under
+    `<Game>/Saved/Crashes/<id>/` after an unhandled exception actually
+    killed the process) or a Lua-level error+traceback block as UE4SS
+    itself writes it directly into UE4SS.log (written whenever
+    `lua_pcall` catches a runtime error inside a mod -- far more common,
+    since most Lua mod bugs never produce a native crash report at all).
+    Auto-detected from the content; pass exactly one of `path` or `text`.
+
+    Returns `{exception_info, thread, callstack}`. The two source formats'
+    `callstack` shapes are genuinely different, not forced into one fake
+    shape: structured `{module, base, offset}` frames for a native crash,
+    plain source-line strings for a Lua traceback. Capped at 100 frames.
+    Never surfaces a `CommandLine` field even if the input has one --
+    confirmed firsthand that a real one contains actual auth tokens.
+    """
+    text_or_error = _read_path_or_text(path, text)
+    if isinstance(text_or_error, dict):
+        return text_or_error
+    try:
+        return _parse_crash(text_or_error)
+    except (ValueError, ET.ParseError) as exc:
+        return {"error": str(exc)}
 
 
 def main() -> None:
