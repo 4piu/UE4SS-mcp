@@ -38,7 +38,8 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 - **`find_object` on a broad class** (`Actor`, `UObject`) **can stall the game** — pagination bounds the response, not the underlying scan. Use a specific class.
 - **`watch_new_object` takes a full class path** (`/Script/Engine.Actor`), unlike `find_object`'s short name.
 - **`dump_and_index`'s `objects`/`sdk`/`uht` kinds can be slow** and stall the game briefly; `actors` is cheap.
-- **`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks argument *count*, not *type* — pass only primitives unless you've confirmed a UFunction's real parameter type.
+- **`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks argument *count*, not *type* — `describe_object` on a UFunction's handle (get one via `find_object(path=...)`) shows its real parameter types; only pass primitives otherwise.
+- **`reload_mod` on the bridge's own mod is flaky.** Reloading a *user's* mod is fine; self-reloading the bridge has caused real connection instability. Use "Restart All Mods" instead if you need to pick up bridge changes.
 - **The bridge takes up to ~30s to connect** after this server starts (retry backoff) — keep one server process alive across calls rather than one-shot scripts.
 - **No version/fork advice.** This project assumes UE4SS already works on your game.
 

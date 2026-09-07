@@ -17,8 +17,13 @@
 - `call_function`/`exec_lua` mutate live state. UE4SS checks argument
   *count* but not *type* — a count-correct call with the wrong Lua value
   for a non-primitive parameter (FName/struct/object) can crash the
-  whole game with no catchable error and no crash dump. Only pass
-  primitives unless you've confirmed the real parameter type.
+  whole game with no catchable error and no crash dump. Before calling
+  a UFunction with any non-primitive parameter, get its handle via
+  `find_object(path="/Script/Class:Function")` and `describe_object` it
+  to see the real parameter types — only pass raw primitives otherwise.
+- `reload_mod` on the bridge's own mod name has caused real connection
+  instability — it's for reloading a *user's* mod. Use "Restart All
+  Mods" instead to pick up bridge changes.
 - The bridge retries on a backoff (2s→30s ceiling) when this server
   isn't reachable — a fresh game can take up to ~30s to show connected,
   and a one-shot script that starts the server for a single call will

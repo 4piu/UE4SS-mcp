@@ -284,6 +284,14 @@ def describe_object(handle: str, limit: int | None = None, cursor: str | None = 
     instead of getting a recursive dump. A `handle` that no longer refers
     to a live object (destroyed actor, unloaded level, ...) returns
     `{"error": "HANDLE_EXPIRED"}` -- re-resolve it via find_object.
+
+    If `handle` is a UFunction (get one via `find_object(path=
+    "/Script/Engine.SomeClass:SomeFunction")`), this instead returns its
+    real parameter list -- `{is_function: true, parameters: [{name,
+    property_type}], ...}` in place of `properties` -- confirming its
+    actual signature before you risk a call_function/exec_lua call with
+    a wrong-type argument (see call_function's docstring for why that
+    matters: it isn't just a clean error).
     """
     return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor})
 

@@ -354,6 +354,46 @@ local function op_find_object(params)
     }
 end
 
+-- A UFunction IS a UStruct, so ForEachProperty on it (not on its
+-- GetClass(), which just describes "what kind of thing is a UFunction"
+-- generically) enumerates its actual parameters -- confirmed live: for
+-- /Script/Engine.PlayerController:ClientMessage this correctly yields
+-- (S: StrProperty, Type: NameProperty, MsgLifeTime: FloatProperty),
+-- exactly the real signature. This is the only way to learn a
+-- UFunction's parameter types before calling it, since call_function's
+-- own error only reports a count mismatch, never a type one.
+local function op_describe_function(obj, params, offset, limit)
+    local parameters = {}
+    local total = 0
+    obj:ForEachProperty(function(prop)
+        total = total + 1
+        local idx = total - 1
+        if idx >= offset and #parameters < limit then
+            local ok_name, name = pcall(function() return prop:GetFName():ToString() end)
+            local ok_type, prop_type = pcall(function() return prop:GetClass():GetFName():ToString() end)
+            table.insert(parameters, {
+                name = ok_name and name or "?",
+                property_type = ok_type and prop_type or "?",
+            })
+        end
+    end)
+
+    local next_offset = offset + #parameters
+    local truncated = next_offset < total
+    local ok_full, full_name = pcall(function() return obj:GetFullName() end)
+
+    return {
+        handle = nil, -- filled in by the caller, which already has params.handle
+        full_name = ok_full and full_name or "?",
+        is_function = true,
+        parameters = parameters,
+        returned = #parameters,
+        total_matched = total,
+        truncated = truncated,
+        cursor = truncated and tostring(next_offset) or nil,
+    }
+end
+
 local function op_describe_object(params)
     local obj = resolve_handle(params.handle)
     if not obj then
@@ -362,6 +402,13 @@ local function op_describe_object(params)
 
     local limit = math.min(tonumber(params.limit) or 50, 200)
     local offset = tonumber(params.cursor) or 0
+
+    local ok_type, ue_type = pcall(function() return obj:type() end)
+    if ok_type and ue_type == "UFunction" then
+        local result = op_describe_function(obj, params, offset, limit)
+        result.handle = params.handle
+        return true, result
+    end
 
     local class = obj:GetClass()
     local props = {}
@@ -389,6 +436,7 @@ local function op_describe_object(params)
         handle = params.handle,
         full_name = ok_full and full_name or "?",
         class = ok_class_name and class_name or "?",
+        is_function = false,
         properties = props,
         returned = #props,
         total_matched = total,
