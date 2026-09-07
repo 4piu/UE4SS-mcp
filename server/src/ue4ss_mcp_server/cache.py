@@ -1,10 +1,10 @@
 """Fetch/cache layer for versioned RE-UE4SS repo content.
 
 Shallow-clones a single git ref, extracts only the subtrees we need
-(docs/, assets/CustomGameConfigs/), and caches the result on disk keyed
-by ref name. Numbered tags are immutable and cached forever; moving refs
-(experimental, experimental-latest) are re-fetched once per process
-lifetime rather than trusted from a prior run. See dev-notes/spec.md §5.
+(docs/), and caches the result on disk keyed by ref name. Numbered tags
+are immutable and cached forever; moving refs (experimental,
+experimental-latest) are re-fetched once per process lifetime rather
+than trusted from a prior run. See dev-notes/spec.md §5.
 """
 
 from __future__ import annotations
@@ -17,8 +17,11 @@ from pathlib import Path
 
 REPO_URL = "https://github.com/UE4SS-RE/RE-UE4SS.git"
 
-# Subtrees copied out of the shallow clone into the cache.
-_SUBTREES = ("docs", "assets/CustomGameConfigs")
+# Subtrees copied out of the shallow clone into the cache. Used to also
+# include assets/CustomGameConfigs for the since-removed compat/fork
+# lookup tools (out of scope: this MCP operates an already-installed
+# UE4SS, not "which version/fork should I install" -- see spec.md §2).
+_SUBTREES = ("docs",)
 
 # Refs that move over time and must not be trusted across process runs.
 _MOVING_REFS = {"experimental", "experimental-latest", "main"}
@@ -49,7 +52,7 @@ def _is_populated(path: Path) -> bool:
 
 
 def ensure_ref_cached(ref: str, *, force_refresh: bool = False) -> Path:
-    """Ensure `ref`'s docs/compat subtrees are on disk; return the cache dir.
+    """Ensure `ref`'s docs subtree is on disk; return the cache dir.
 
     Raises RefFetchError if the ref doesn't exist or the clone fails.
     """
