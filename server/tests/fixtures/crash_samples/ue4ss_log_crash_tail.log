@@ -1,0 +1,25 @@
+[2026-09-07 14:26:13.4535100] [Lua] [CheatManagerEnabler] CheatManager already exist, skipping restoration
+[2026-09-07 14:26:13.4538268] Error: [Lua::call_function] lua_pcall returned LUA_ERRRUN => [string "..."]:7: C stack overflow
+stack traceback:
+	[string "..."]:7: in function <[string "..."]:6>
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	...	(skipping 376 levels)
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	[string "..."]:13: in function <[string "..."]:11>
+	[C]: in method 'ClientRestart'
+	[string "..."]:15: in main chunk
+	[C]: in function 'pcall'
+	...inaries\Win64\ue4ss\Mods\UE4SSMCPBridge\Scripts\main.lua:673: in function <...inaries\Win64\ue4ss\Mods\UE4SSMCPBridge\Scripts\main.lua:662>
+	[C]: in function 'pcall'
+	...inaries\Win64\ue4ss\Mods\UE4SSMCPBridge\Scripts\main.lua:705: in upvalue 'handle_request'
+	...inaries\Win64\ue4ss\Mods\UE4SSMCPBridge\Scripts\main.lua:744: in function <...inaries\Win64\ue4ss\Mods\UE4SSMCPBridge\Scripts\main.lua:743>
