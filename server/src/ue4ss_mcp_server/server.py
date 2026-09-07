@@ -17,6 +17,8 @@ from ue4ss_mcp_server.docs_index import DocEntry, build_index
 from ue4ss_mcp_server.dump_index import DumpEntry, parse_actor_csv, parse_header_dir, parse_object_dump
 from ue4ss_mcp_server.dump_index import search_dump_entries as _search_dump_entries
 from ue4ss_mcp_server.log_parse import parse_log as _parse_log
+from ue4ss_mcp_server.mod_management import disable_mod as _disable_mod
+from ue4ss_mcp_server.mod_management import enable_mod as _enable_mod
 from ue4ss_mcp_server.search import find_symbol, search_symbols
 from ue4ss_mcp_server.upgrade_notes import DEFAULT_SOURCE_REF
 from ue4ss_mcp_server.upgrade_notes import get_upgrade_notes as _get_upgrade_notes
@@ -159,6 +161,37 @@ def install_bridge_mod(game_install_path: str) -> dict:
     if result.get("installed"):
         _last_install_path = Path(game_install_path)
     return result
+
+
+@mcp.tool()
+def enable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
+    """Enable a mod in mods.txt so it loads on the next reload/relaunch --
+    e.g. one you're developing and just placed under `Mods/<mod_name>/`
+    yourself (that placement is normal file editing, not something this
+    MCP does for you; this tool only handles mods.txt's own quirks, like
+    keeping UE4SS's "do not move up!" comment attached to Keybinds).
+
+    Errors if `Mods/<mod_name>/` doesn't exist yet, rather than silently
+    enabling a name that isn't a real mod. `game_install_path` defaults
+    to whatever was last passed to install_bridge_mod in this session.
+    """
+    install_dir = game_install_path or (str(_last_install_path) if _last_install_path else None)
+    if install_dir is None:
+        return {"enabled": False, "error": "game_install_path not given, and install_bridge_mod hasn't been called this session"}
+    return _enable_mod(install_dir, mod_name)
+
+
+@mcp.tool()
+def disable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
+    """Disable a mod in mods.txt. Doesn't require the mod's files to
+    still exist -- also useful for ruling a mod out as the cause of a
+    problem, or turning one off before removing it. `game_install_path`
+    defaults to whatever was last passed to install_bridge_mod.
+    """
+    install_dir = game_install_path or (str(_last_install_path) if _last_install_path else None)
+    if install_dir is None:
+        return {"disabled": False, "error": "game_install_path not given, and install_bridge_mod hasn't been called this session"}
+    return _disable_mod(install_dir, mod_name)
 
 
 @mcp.tool()

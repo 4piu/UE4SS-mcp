@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from ue4ss_mcp_server.cache import cache_root
+from ue4ss_mcp_server.mod_management import set_mod_enabled
 
 _TEMPLATE_DIR = Path(__file__).parent / "bridge_mod_template"
 _MOD_NAME = "UE4SSMCPBridge"
@@ -24,36 +25,6 @@ def get_or_create_token() -> str:
     _TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     _TOKEN_PATH.write_text(token, encoding="utf-8")
     return token
-
-
-def _enable_in_mods_txt(mods_txt: Path) -> bool:
-    """Returns True if mods.txt was changed."""
-    lines = mods_txt.read_text(encoding="utf-8").splitlines() if mods_txt.exists() else []
-
-    for i, line in enumerate(lines):
-        name = line.split(":", 1)[0].strip()
-        if name == _MOD_NAME:
-            if line.strip().endswith(": 1") or line.strip().endswith(":1"):
-                return False
-            lines[i] = f"{_MOD_NAME} : 1"
-            mods_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            return True
-
-    # Insert before a trailing "Keybinds" line if present (UE4SS ships a
-    # comment warning not to move that mod down), otherwise append. Also
-    # step back over a comment line directly above it (UE4SS's default
-    # mods.txt has "; Built-in keybinds, do not move up!" right above
-    # Keybinds) so that comment stays attached to Keybinds, not to us.
-    insert_at = len(lines)
-    for i, line in enumerate(lines):
-        if line.split(":", 1)[0].strip() == "Keybinds":
-            insert_at = i
-            if insert_at > 0 and lines[insert_at - 1].lstrip().startswith(";"):
-                insert_at -= 1
-            break
-    lines.insert(insert_at, f"{_MOD_NAME} : 1")
-    mods_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return True
 
 
 def install_bridge_mod(game_install_path: str) -> dict:
@@ -80,7 +51,7 @@ def install_bridge_mod(game_install_path: str) -> dict:
     content = main_lua.read_text(encoding="utf-8")
     main_lua.write_text(content.replace(_TOKEN_PLACEHOLDER, token), encoding="utf-8")
 
-    mods_txt_updated = _enable_in_mods_txt(mods_dir / "mods.txt")
+    mods_txt_updated = set_mod_enabled(mods_dir / "mods.txt", _MOD_NAME, True)
 
     return {
         "installed": True,
