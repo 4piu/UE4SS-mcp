@@ -393,13 +393,15 @@ def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None 
 def reload_mod(mod_name: str) -> dict:
     """Hot-reload a Lua mod UE4SS is ALREADY running -- e.g. after editing
     the script of a mod you enabled earlier this session -- via
-    RestartMod, or this bridge's own mod via RestartCurrentMod if
-    `mod_name` matches it. Queued for the next update cycle, not
-    immediate. Reloading the bridge mod itself destroys its Lua state
-    (and with it every handle/hook/watch from the current session) --
-    this response arrives fine beforehand, but expect bridge_status to
-    briefly show disconnected while it restarts, then reconnect on its
-    own like any other relaunch.
+    RestartMod. Queued for the next update cycle, not immediate.
+
+    Calling this with the bridge's own mod name is rejected outright
+    (`{"error": "..."}`) rather than attempted: restarting this mod from
+    within a request it's currently handling has caused real connection
+    instability in testing. There's also no real use
+    case for it -- an agent never edits the bridge's own code, and
+    picking up a bridge update needs a human's "Restart All Mods" click
+    regardless (same as any mod's first load, see below).
 
     IMPORTANT, confirmed live: this does NOT load a mod for the first
     time. UE4SS only tracks mods it discovered at startup or a later

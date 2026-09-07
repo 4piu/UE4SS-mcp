@@ -663,14 +663,21 @@ local function op_reload_mod(params)
     if not mod_name then
         return false, "reload_mod requires 'mod_name'"
     end
-    -- Both queue for the next update cycle rather than acting
-    -- immediately, so returning normally here (letting the response for
-    -- *this* request go out first) is safe even when reloading ourselves.
+    -- Restarting THIS mod from within a request THIS mod is currently
+    -- handling queues the teardown of the very call stack that's still
+    -- trying to write this response and schedule the next read --
+    -- unlike restarting some other mod from outside its call stack,
+    -- which RestartMod handles fine. Confirmed live: this reliably
+    -- produced real connection instability, not just occasional
+    -- flakiness. No known real use case justifies the risk (an agent
+    -- never edits the bridge's own code; picking up a bridge update
+    -- already requires a human's "Restart All Mods" click regardless,
+    -- same as any mod's first load), so this is refused outright
+    -- rather than attempted.
     if mod_name == _SELF_MOD_NAME then
-        RestartCurrentMod()
-    else
-        RestartMod(mod_name)
+        return false, "cannot reload the bridge mod from within itself -- ask a human to click \"Restart All Mods\" in the UE4SS console, or relaunch the game"
     end
+    RestartMod(mod_name)
     return true, { queued = true, mod_name = mod_name }
 end
 

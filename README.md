@@ -47,5 +47,4 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 - **A mod's first load needs a human.** `enable_mod` + `reload_mod` can't start a mod UE4SS has never loaded — click "Restart All Mods" in the UE4SS console (or relaunch) once, then `reload_mod` works.
 - **A broad live query can stall the game.** `find_object` on `Actor`/`UObject`, or `dump_and_index`'s `objects`/`sdk`/`uht` kinds, run an unbounded native scan on the game thread — pagination bounds the response, not the scan itself.
 - **`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks argument *count* but not *type*.
-- **`reload_mod` on the bridge's own mod is flaky.** Reloading a *user's* mod is fine; self-reloading the bridge has caused real connection instability — use "Restart All Mods" instead.
 - **The bridge takes up to ~30s to connect** after this server starts (retry backoff) — keep one server process alive across calls rather than one-shot scripts.

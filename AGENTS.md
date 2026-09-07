@@ -21,9 +21,6 @@
   a UFunction with any non-primitive parameter, get its handle via
   `find_object(path="/Script/Class:Function")` and `describe_object` it
   to see the real parameter types — only pass raw primitives otherwise.
-- `reload_mod` on the bridge's own mod name has caused real connection
-  instability — it's for reloading a *user's* mod. Use "Restart All
-  Mods" instead to pick up bridge changes.
 - To confirm your own mod actually ran, `search_log` for its `print()`
   output — `parse_log`'s structured fields won't show arbitrary text.
 - The bridge retries on a backoff (2s→30s ceiling) when this server
