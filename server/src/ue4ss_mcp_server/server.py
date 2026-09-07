@@ -227,6 +227,17 @@ def find_object(
 
     Returns a paginated envelope of `{handle, class, name}` -- pass a
     result's `handle` to describe_object/call_function to drill in.
+
+    IMPORTANT: prefer a specific class over a broad base class like
+    "Actor", "Pawn", or "UObject". `limit`/`cursor` only bound the
+    *response size* -- the underlying FindAllOf scan still has to
+    enumerate every live instance of the class first, and that scan runs
+    on the game's own thread. In a large open-world game, scanning a
+    near-universal base class can take long enough to freeze the game
+    itself for the duration (confirmed: `FindAllOf("Actor")` froze a
+    real running game for 10+ seconds). Use a concrete class name (the
+    Blueprint/native class you actually care about) or a `name_pattern`-
+    friendly `path` lookup instead whenever possible.
     """
     params = {"class": class_name, "name_pattern": name_pattern, "path": path, "limit": limit, "cursor": cursor}
     return _bridge_request("find_object", params)
