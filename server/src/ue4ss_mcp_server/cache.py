@@ -21,7 +21,7 @@ REPO_URL = "https://github.com/UE4SS-RE/RE-UE4SS.git"
 _SUBTREES = ("docs", "assets/CustomGameConfigs")
 
 # Refs that move over time and must not be trusted across process runs.
-_MOVING_REFS = {"experimental", "experimental-latest"}
+_MOVING_REFS = {"experimental", "experimental-latest", "main"}
 
 # Refs refreshed at least once this process (moving refs only).
 _refreshed_this_run: set[str] = set()
