@@ -8,6 +8,26 @@ with hundreds of thousands of entries.
 
 ## Setup
 
+Add this to your MCP client's config (e.g. `mcp.json`) to run it
+straight from GitHub via `uvx` — no clone needed:
+
+```json
+{
+  "mcpServers": {
+    "ue4ss-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/4piu/UE4SS-mcp#subdirectory=server",
+        "ue4ss-mcp-server"
+      ]
+    }
+  }
+}
+```
+
+Or from a local clone:
+
 ```bash
 cd server
 uv sync
