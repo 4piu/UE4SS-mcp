@@ -200,6 +200,69 @@ def bridge_status() -> dict:
     return _bridge_state.snapshot()
 
 
+def _bridge_request(op: str, params: dict) -> dict:
+    assert _bridge_server is not None
+    response = _bridge_server.send_request(op, params)
+    if not response.get("ok"):
+        return {"error": response.get("error", "unknown bridge error")}
+    return response.get("result", {})
+
+
+@mcp.tool()
+def find_object(
+    class_name: str | None = None,
+    name_pattern: str | None = None,
+    path: str | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> dict:
+    """Find live UObject instances in the connected game, without dumping
+    the whole object graph (which can have hundreds of thousands of
+    entries). Pass exactly one of `path` (an exact object path, resolved
+    via StaticFindObject -- cheap, single result) or `class_name` (a short
+    class name, resolved via FindAllOf and optionally narrowed with a
+    case-insensitive substring `name_pattern`). Requires the bridge to be
+    connected (see bridge_status); returns `{"error": "not connected"}`
+    otherwise.
+
+    Returns a paginated envelope of `{handle, class, name}` -- pass a
+    result's `handle` to describe_object/call_function to drill in.
+    """
+    params = {"class": class_name, "name_pattern": name_pattern, "path": path, "limit": limit, "cursor": cursor}
+    return _bridge_request("find_object", params)
+
+
+@mcp.tool()
+def describe_object(handle: str, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Get the property map for one live object found via find_object.
+
+    Properties are paginated (like every list-shaped tool here) since a
+    single class can have dozens to hundreds of reflected properties.
+    Nested UObject-valued properties come back as new handles rather than
+    being inlined, so drill into them with another describe_object call
+    instead of getting a recursive dump. A `handle` that no longer refers
+    to a live object (destroyed actor, unloaded level, ...) returns
+    `{"error": "HANDLE_EXPIRED"}` -- re-resolve it via find_object.
+    """
+    return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor})
+
+
+@mcp.tool()
+def call_function(handle: str, function_name: str, args: list | None = None) -> dict:
+    """Call a UFunction (or any callable member) on a live object found via
+    find_object, e.g. to invoke a mod's own testable Lua-callable function
+    or a native UFunction. This mutates live game state -- use deliberately,
+    not for read-only inspection (that's what describe_object is for).
+
+    `args` is a plain JSON array in call order (no self/context -- that's
+    supplied automatically from `handle`). Returns `{"result": {...}}` on
+    success (nested UObject return values come back as a handle, same as
+    describe_object) or `{"error": "..."}` on failure, including
+    `HANDLE_EXPIRED` for a stale handle.
+    """
+    return _bridge_request("call_function", {"handle": handle, "function_name": function_name, "args": args or []})
+
+
 def main() -> None:
     global _bridge_server
     _bridge_server = BridgeServer(get_or_create_token(), _bridge_state)
