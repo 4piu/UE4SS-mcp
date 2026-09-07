@@ -17,6 +17,11 @@ uv run ue4ss-mcp-server   # stdio transport
 Call `install_bridge_mod` once against your UE4SS install directory to
 enable the live tools below.
 
+The bridge mod reconnects on a backoff (2s, doubling to a 30s ceiling)
+whenever this server isn't reachable, so a fresh game can take up to
+~30s to show connected — keep one server process alive across calls
+rather than starting it fresh for a single one-shot call.
+
 ## Tools
 
 Every list-shaped tool is paginated (`{items, returned, total_matched, truncated, cursor}`) — nothing dumps a whole object graph or log at once. Full usage details are in each tool's own description.
@@ -47,4 +52,3 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 - **A mod's first load needs a human.** `enable_mod` + `reload_mod` can't start a mod UE4SS has never loaded — click "Restart All Mods" in the UE4SS console (or relaunch) once, then `reload_mod` works.
 - **A broad live query can stall the game.** `find_object` on `Actor`/`UObject`, or `dump_and_index`'s `objects`/`sdk`/`uht` kinds, run an unbounded native scan on the game thread — pagination bounds the response, not the scan itself.
 - **`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks argument *count* but not *type*.
-- **The bridge takes up to ~30s to connect** after this server starts (retry backoff) — keep one server process alive across calls rather than one-shot scripts.
