@@ -309,6 +309,14 @@ def watch_new_object(class_name: str) -> dict:
     classes), without polling find_object in a loop. `class_name` doesn't
     need to exist yet when you call this.
 
+    IMPORTANT: unlike find_object's `class_name` (a bare short name like
+    "Actor"), this one needs the *full* class path, e.g.
+    "/Script/Engine.Actor" -- confirmed live: passing a bare short name
+    fails with a real Lua error from NotifyOnNewObject itself
+    ("must contain at least two parts"). Use search_api/get_symbol or a
+    describe_object's `class` field (also a full path) to find the right
+    string if you're not sure of it.
+
     Fires are buffered and pulled via poll_hook_events with the returned
     `watch_id`, same pull model as register_hook. Call unregister_hook
     when done -- UE4SS's underlying NotifyOnNewObject has no direct
