@@ -1,8 +1,8 @@
 [project]
 name = "ue4ss-mcp-server"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "MCP server for operating an installed RE-UE4SS: versioned docs, live game introspection/control, and log/crash parsing"
+readme = "../README.md"
 authors = [
     { name = "4piu", email = "16668056+4piu@users.noreply.github.com" }
 ]
