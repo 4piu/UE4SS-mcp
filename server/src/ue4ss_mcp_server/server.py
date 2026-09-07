@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from pathlib import Path
+
 from mcp.server.mcpserver import MCPServer
 
 from ue4ss_mcp_server.bridge import BridgeServer, BridgeState
@@ -13,6 +16,8 @@ from ue4ss_mcp_server.compat import lookup_patternsleuth_status
 from ue4ss_mcp_server.compat import list_known_forks as _list_known_forks
 from ue4ss_mcp_server.context import resolve_context as _resolve_context
 from ue4ss_mcp_server.docs_index import DocEntry, build_index
+from ue4ss_mcp_server.dump_index import DumpEntry, parse_actor_csv, parse_header_dir, parse_object_dump
+from ue4ss_mcp_server.dump_index import search_dump_entries as _search_dump_entries
 from ue4ss_mcp_server.envelope import paginate
 from ue4ss_mcp_server.search import find_symbol, search_symbols
 from ue4ss_mcp_server.upgrade_notes import DEFAULT_SOURCE_REF
@@ -27,6 +32,17 @@ _bridge_server: BridgeServer | None = None
 # not free, and a session will typically call search_api/get_symbol
 # repeatedly against the same ref+api.
 _index_cache: dict[tuple[str, str], list[DocEntry]] = {}
+
+# Dump corpora built by dump_and_index, queried by search_dump. Lost on
+# server restart -- rebuilding is just re-running dump_and_index, and
+# nothing here needs to survive a restart the way cached docs do.
+_dump_corpora: dict[str, list[DumpEntry]] = {}
+_dump_counter = 0
+
+# Remembered so dump_and_index doesn't need the same path re-passed in a
+# session that already called install_bridge_mod -- the dump files it
+# needs to read live in this same directory.
+_last_install_path: Path | None = None
 
 
 def _get_index(version: str, api: str) -> list[DocEntry]:
@@ -188,7 +204,11 @@ def install_bridge_mod(game_install_path: str) -> dict:
     opt-in only -- the bridge is never installed automatically. Takes
     effect on the next game launch or mod reload.
     """
-    return _install_bridge_mod(game_install_path)
+    global _last_install_path
+    result = _install_bridge_mod(game_install_path)
+    if result.get("installed"):
+        _last_install_path = Path(game_install_path)
+    return result
 
 
 @mcp.tool()
@@ -352,6 +372,115 @@ def reload_mod(mod_name: str) -> dict:
     own like any other relaunch.
     """
     return _bridge_request("reload_mod", {"mod_name": mod_name})
+
+
+_DUMP_KINDS = ("actors", "objects", "sdk", "uht")
+
+
+def _load_dump_entries(kind: str, install_dir: Path) -> list[DumpEntry]:
+    if kind == "actors":
+        candidates = list(install_dir.glob("*-ue4ss_actor_data.csv"))
+        if not candidates:
+            raise FileNotFoundError(f"no *-ue4ss_actor_data.csv found in {install_dir}")
+        return parse_actor_csv(max(candidates, key=lambda p: p.stat().st_mtime))
+    if kind == "objects":
+        path = install_dir / "UE4SS_ObjectDump.txt"
+        if not path.exists():
+            raise FileNotFoundError(str(path))
+        return parse_object_dump(path)
+    if kind == "sdk":
+        path = install_dir / "CXXHeaderDump"
+        if not path.is_dir():
+            raise FileNotFoundError(str(path))
+        return parse_header_dir(path)
+    if kind == "uht":
+        path = install_dir / "UHTHeaderDump"
+        if not path.is_dir():
+            raise FileNotFoundError(str(path))
+        return parse_header_dir(path)
+    raise AssertionError(f"unreachable: kind={kind!r}")
+
+
+@mcp.tool()
+def dump_and_index(kind: str, game_install_path: str | None = None) -> dict:
+    """Trigger one of UE4SS's own bulk dumpers and index its output for
+    search_dump, without ever inlining the dump itself (some of these
+    run to hundreds of thousands of lines or thousands of files).
+
+    `kind` is one of:
+    - "actors" -- DumpAllActors, a CSV of every actor currently in memory.
+    - "objects" -- DumpAllObjects, every loaded object AND property,
+      easily the largest of the four.
+    - "sdk" -- GenerateSDK, one C++ header per loaded Blueprint/class.
+    - "uht" -- GenerateUHTCompatibleHeaders, Unreal Header Tool-style
+      headers for the currently-loaded packages.
+
+    CAUTION: like find_object against a broad base class, these run on
+    the game thread and their cost scales with how much is currently
+    loaded -- "objects" and "sdk" in particular can take a long time (or
+    even freeze the game for its duration) in a large, densely-loaded
+    game. Prefer "actors" when it's enough for what you need.
+
+    `game_install_path` defaults to whatever was last passed to
+    install_bridge_mod in this session (the dump files land in that same
+    directory) -- only pass it explicitly if that hasn't happened yet.
+    Returns `{corpus_id, kind, entry_count}` on success; pass `corpus_id`
+    to search_dump. Corpora are session-scoped (lost on server restart).
+    """
+    if kind not in _DUMP_KINDS:
+        return {"error": f"kind must be one of {list(_DUMP_KINDS)}"}
+
+    install_dir = Path(game_install_path) if game_install_path else _last_install_path
+    if install_dir is None:
+        return {"error": "game_install_path not given, and install_bridge_mod hasn't been called this session"}
+
+    response = _bridge_request("dump_and_index", {"kind": kind})
+    if "error" in response:
+        return response
+
+    try:
+        entries = _load_dump_entries(kind, install_dir)
+    except FileNotFoundError as exc:
+        return {"error": f"dump was triggered but its output wasn't found: {exc}"}
+
+    global _dump_counter
+    _dump_counter += 1
+    corpus_id = f"dump_{_dump_counter:08x}"
+    _dump_corpora[corpus_id] = entries
+    return {"corpus_id": corpus_id, "kind": kind, "entry_count": len(entries)}
+
+
+@mcp.tool()
+def search_dump(corpus_id: str, query: str, limit: int | None = None, cursor: str | None = None) -> dict:
+    """Search a corpus built by dump_and_index. Case-insensitive
+    substring match, paginated like every other search-shaped tool here.
+    Each result's shape depends on the dump's `kind`: a row's fields for
+    "actors", `{address, type, full_name, meta}` for "objects", or
+    `{symbol, kind, file, line}` for "sdk"/"uht".
+    """
+    entries = _dump_corpora.get(corpus_id)
+    if entries is None:
+        return {"error": f"unknown corpus_id '{corpus_id}' -- call dump_and_index first (corpora don't survive a server restart)"}
+    return _search_dump_entries(entries, query, limit, cursor)
+
+
+@mcp.tool()
+def exec_lua(code: str) -> dict:
+    """Compile and run arbitrary Lua in the connected game, on the game
+    thread. Last resort: every structured tool here (find_object,
+    call_function, etc.) exists specifically so this isn't usually
+    needed -- reach for this only when something genuinely isn't
+    expressible through them.
+
+    Returns `{result: {...}}` (same value serialization as
+    call_function/describe_object -- a nested UObject comes back as a
+    handle, not inlined) on success, `{error: "..."}` on a compile error
+    or a runtime error from the code itself. A long string result is
+    truncated (`truncated: true` in the result) rather than flooding the
+    response. Mutates live state and isn't logged/audited any
+    differently from call_function -- use deliberately.
+    """
+    return _bridge_request("exec_lua", {"code": code})
 
 
 def main() -> None:

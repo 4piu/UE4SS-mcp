@@ -21,6 +21,13 @@
 -- constructs the watched class) rather than in response to a request,
 -- so they're buffered here and drained via poll_hook_events -- nothing
 -- is ever pushed to the server outside of a request's own response.
+--
+-- M6: adds dump_and_index (triggers UE4SS's own bulk dumpers --
+-- DumpAllActors/DumpAllObjects/GenerateSDK/GenerateUHTCompatibleHeaders
+-- -- and nothing more; the output files can be huge, so reading and
+-- indexing them happens entirely on the Python side) and exec_lua (a
+-- last resort: compiles and runs arbitrary Lua, size-capping any string
+-- result).
 
 local PIPE_NAME = "\\\\.\\pipe\\ue4ss-mcp"
 local TOKEN = "__BRIDGE_TOKEN__"
@@ -619,6 +626,63 @@ local function op_reload_mod(params)
     return true, { queued = true, mod_name = mod_name }
 end
 
+-- Triggers only -- the resulting file(s) can be huge (hundreds of
+-- thousands of lines / thousands of headers), so reading and indexing
+-- them happens entirely on the Python side, which has direct filesystem
+-- access to the game install and never needs to pipe that content
+-- through here at all. Looked up by name via _G rather than bound
+-- directly so a UE4SS build missing one of these (e.g. an older
+-- version without GenerateUHTCompatibleHeaders) fails cleanly instead
+-- of erroring at mod-load time.
+local DUMP_TRIGGER_NAMES = {
+    actors = "DumpAllActors",
+    objects = "DumpAllObjects",
+    sdk = "GenerateSDK",
+    uht = "GenerateUHTCompatibleHeaders",
+}
+
+local function op_dump_and_index(params)
+    local fn_name = DUMP_TRIGGER_NAMES[params.kind]
+    if not fn_name then
+        return false, "dump_and_index: kind must be one of 'actors', 'objects', 'sdk', 'uht'"
+    end
+    local fn = _G[fn_name]
+    if not fn then
+        return false, string.format("%s is not available in this UE4SS build", fn_name)
+    end
+    local ok, err = pcall(fn)
+    if not ok then
+        return false, tostring(err)
+    end
+    return true, { kind = params.kind, triggered = true }
+end
+
+local _EXEC_LUA_MAX_STRING_LEN = 4000
+
+local function op_exec_lua(params)
+    local code = params.code
+    if not code then
+        return false, "exec_lua requires 'code'"
+    end
+
+    local fn, compile_err = load(code)
+    if not fn then
+        return false, "compile error: " .. tostring(compile_err)
+    end
+
+    local ok, result = pcall(fn)
+    if not ok then
+        return false, tostring(result)
+    end
+
+    local serialized = serialize_value(result)
+    if serialized.type == "string" and #serialized.value > _EXEC_LUA_MAX_STRING_LEN then
+        serialized.value = serialized.value:sub(1, _EXEC_LUA_MAX_STRING_LEN)
+        serialized.truncated = true
+    end
+    return true, { result = serialized }
+end
+
 local OPS = {
     find_object = op_find_object,
     describe_object = op_describe_object,
@@ -628,6 +692,8 @@ local OPS = {
     watch_new_object = op_watch_new_object,
     poll_hook_events = op_poll_hook_events,
     reload_mod = op_reload_mod,
+    dump_and_index = op_dump_and_index,
+    exec_lua = op_exec_lua,
 }
 
 local function handle_request(req)

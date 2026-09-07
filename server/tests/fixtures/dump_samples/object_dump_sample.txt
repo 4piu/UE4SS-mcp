@@ -1,0 +1,3 @@
+[000002A70F57E5C0] Function /Game/UI/Art/WidgetParts/Basic_ButtonScalable2.Basic_ButtonScalable2_C:BndEvt__Button_0_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature [n: 5343AA] [c: 000002A727993A00] [or: 000002A708466980]
+[000002A70F57E4E0] Function /Game/UI/Art/WidgetParts/Basic_ButtonScalable2.Basic_ButtonScalable2_C:PreConstruct [n: 4057B] [c: 000002A727993A00] [or: 000002A708466980]
+[000002A70F876600] BoolProperty /Game/UI/Art/WidgetParts/Basic_ButtonScalable2.Basic_ButtonScalable2_C:PreConstruct:IsDesignTime [o: 0] [n: 4D63DB] [c: 00007FF683722CC0] [owr: 000002A70F57E4E0]
