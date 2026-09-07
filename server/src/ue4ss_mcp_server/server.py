@@ -165,11 +165,18 @@ def install_bridge_mod(game_install_path: str) -> dict:
 
 @mcp.tool()
 def enable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
-    """Enable a mod in mods.txt so it loads on the next reload/relaunch --
-    e.g. one you're developing and just placed under `Mods/<mod_name>/`
-    yourself (that placement is normal file editing, not something this
-    MCP does for you; this tool only handles mods.txt's own quirks, like
-    keeping UE4SS's "do not move up!" comment attached to Keybinds).
+    """Enable a mod in mods.txt -- e.g. one you're developing and just
+    placed under `Mods/<mod_name>/` yourself (that placement is normal
+    file editing, not something this MCP does for you; this tool only
+    handles mods.txt's own quirks, like keeping UE4SS's "do not move up!"
+    comment attached to Keybinds).
+
+    IMPORTANT, confirmed live: enabling here does NOT make UE4SS load the
+    mod. For a mod's first load, UE4SS needs either the human to click
+    "Restart All Mods" in its GUI Console, or a full game relaunch --
+    reload_mod (RestartMod) only works on a mod UE4SS is already
+    tracking, not a brand-new one (see reload_mod's own docstring). Once
+    it's been loaded once, reload_mod works fine for iterating on it.
 
     Errors if `Mods/<mod_name>/` doesn't exist yet, rather than silently
     enabling a name that isn't a real mod. `game_install_path` defaults
@@ -355,7 +362,8 @@ def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None 
 
 @mcp.tool()
 def reload_mod(mod_name: str) -> dict:
-    """Hot-reload a Lua mod by name (e.g. after editing its script) via
+    """Hot-reload a Lua mod UE4SS is ALREADY running -- e.g. after editing
+    the script of a mod you enabled earlier this session -- via
     RestartMod, or this bridge's own mod via RestartCurrentMod if
     `mod_name` matches it. Queued for the next update cycle, not
     immediate. Reloading the bridge mod itself destroys its Lua state
@@ -363,6 +371,19 @@ def reload_mod(mod_name: str) -> dict:
     this response arrives fine beforehand, but expect bridge_status to
     briefly show disconnected while it restarts, then reconnect on its
     own like any other relaunch.
+
+    IMPORTANT, confirmed live: this does NOT load a mod for the first
+    time. UE4SS only tracks mods it discovered at startup or a later
+    full rescan -- calling this on a mod that was never running (even
+    right after enable_mod) fails with a real UE4SS.log message
+    ("Could not find mod to reinstall: <name>"), which this tool can't
+    detect or distinguish from success (`RestartMod` doesn't report
+    failure back to Lua, so the response here is `{"queued": true}`
+    either way). There is no Lua-callable equivalent of the UE4SS GUI
+    Console's "Restart All Mods" button, which *does* do a full rescan
+    and pick up brand-new mods -- for a mod's first load, ask the human
+    to click that button (or relaunch the game) once. After that,
+    reload_mod works for iterating on it.
     """
     return _bridge_request("reload_mod", {"mod_name": mod_name})
 
