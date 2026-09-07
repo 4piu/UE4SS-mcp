@@ -1,0 +1,24 @@
+[project]
+name = "ue4ss-mcp-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "4piu", email = "16668056+4piu@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "mcp>=2.1.1",
+]
+
+[project.scripts]
+ue4ss-mcp-server = "ue4ss_mcp_server.server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

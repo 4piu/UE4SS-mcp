@@ -58,6 +58,9 @@ compile_commands.json
 *.bak
 *.swp
 
+# ...except real UE4SS.log samples kept as test fixtures
+!server/tests/fixtures/*.log
+
 # vcpkg
 vcpkg_installed/
 
