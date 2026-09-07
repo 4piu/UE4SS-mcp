@@ -5,8 +5,12 @@ from __future__ import annotations
 from mcp.server.mcpserver import MCPServer
 
 from ue4ss_mcp_server.cache import ensure_ref_cached
+from ue4ss_mcp_server.compat import lookup_custom_game_config, lookup_known_fork
+from ue4ss_mcp_server.compat import lookup_patternsleuth_status
+from ue4ss_mcp_server.compat import list_known_forks as _list_known_forks
 from ue4ss_mcp_server.context import resolve_context as _resolve_context
 from ue4ss_mcp_server.docs_index import DocEntry, build_index
+from ue4ss_mcp_server.envelope import paginate
 from ue4ss_mcp_server.search import find_symbol, search_symbols
 from ue4ss_mcp_server.upgrade_notes import DEFAULT_SOURCE_REF
 from ue4ss_mcp_server.upgrade_notes import get_upgrade_notes as _get_upgrade_notes
@@ -119,6 +123,54 @@ def get_upgrade_notes(from_version: str, to_version: str) -> dict:
     """
     docs_root = ensure_ref_cached(DEFAULT_SOURCE_REF) / "docs"
     return _get_upgrade_notes(docs_root, from_version, to_version, DEFAULT_SOURCE_REF)
+
+
+@mcp.tool()
+def lookup_game_compat(game_name: str, version: str) -> dict:
+    """Check a game's known UE4SS compatibility signals: whether it has a
+    CustomGameConfig (a lighter-weight override that works with upstream
+    UE4SS directly), its Patternsleuth AOB-scan status, and any known
+    dedicated fork (a heavier, separate UE4SS build for games upstream
+    doesn't support at all).
+
+    CustomGameConfigs are versioned and looked up at `version`. The
+    Patternsleuth compatibility list doesn't exist in older tags, so this
+    falls back to `main` when missing from `version`'s docs -- the
+    response's `patternsleuth_source_ref` says which ref it actually came
+    from.
+    """
+    cache_dir = ensure_ref_cached(version)
+    config = lookup_custom_game_config(cache_dir, game_name)
+
+    ps_source = version
+    ps_status = lookup_patternsleuth_status(cache_dir / "docs", game_name)
+    ps_file_missing = not (cache_dir / "docs" / "patternsleuth-games.md").exists()
+    if ps_status is None and ps_file_missing:
+        fallback_dir = ensure_ref_cached(DEFAULT_SOURCE_REF)
+        ps_status = lookup_patternsleuth_status(fallback_dir / "docs", game_name)
+        ps_source = DEFAULT_SOURCE_REF
+
+    return {
+        "game": game_name,
+        "has_custom_config": config is not None,
+        "custom_config": (
+            {"folder_name": config.folder_name, "files": config.files}
+            if config
+            else None
+        ),
+        "patternsleuth_status": ps_status,
+        "patternsleuth_source_ref": ps_source,
+        "known_fork": lookup_known_fork(game_name),
+    }
+
+
+@mcp.tool()
+def list_known_forks(limit: int | None = None, cursor: str | None = None) -> dict:
+    """List the hand-curated registry of games with a known dedicated
+    UE4SS fork. Sparse by design -- only individually-verified entries are
+    added, not assumed from community reputation (see forks.json's note).
+    """
+    return paginate(_list_known_forks(), limit, cursor)
 
 
 def main() -> None:
