@@ -28,17 +28,33 @@
 -- indexing them happens entirely on the Python side) and exec_lua (a
 -- last resort: compiles and runs arbitrary Lua, size-capping any string
 -- result).
+--
+-- Transport flip: this mod now HOSTS the named pipe (via a small
+-- companion native module, ue4ssmcp_pipe.dll -- Lua's stdlib alone
+-- can't create a Windows named pipe server) instead of dialing out to
+-- the MCP server. The server connects OUT to this mod's own uniquely-
+-- named pipe, and lets more than one agent attach to the same running
+-- game at once (nMaxInstances > 1 on the native side).
+--
+-- Confirmed live: UE4SS gives each mod exactly ONE dedicated async
+-- thread (ExecuteAsync/ExecuteWithDelay/LoopAsync all funnel through
+-- the same single per-mod thread, one callback at a time -- this is
+-- UE4SS's own design, not a bug). A blocking accept()/read() there
+-- would stall every other pending client/accept for as long as it
+-- blocks -- this reliably starved concurrent requests during real
+-- multi-agent testing. So the native module is non-blocking/poll-based
+-- (accept_async/poll_accept, read_line_async/poll_read_line -- see its
+-- own header for why) and this file drives it from one lightweight
+-- recurring tick (self-rescheduling via ExecuteWithDelay) rather than a
+-- blocking chain -- the tick itself never blocks, so it can service the
+-- pending listener AND every connected client's next-read in the same
+-- pass without any of them waiting on each other.
 
-local PIPE_NAME = "\\\\.\\pipe\\ue4ss-mcp"
+local pipe_native = require("ue4ssmcp_pipe")
+
+local PIPE_NAME = "__BRIDGE_PIPE_NAME__"
 local TOKEN = "__BRIDGE_TOKEN__"
-
--- Not having the MCP server running is a normal state (you won't always
--- be actively using the tool while playing), so back off instead of
--- hammering the log every 2s forever: doubles each failed attempt up to
--- a 30s ceiling, then holds there.
-local INITIAL_RETRY_DELAY_MS = 2000
-local MAX_RETRY_DELAY_MS = 30000
-local retry_delay_ms = INITIAL_RETRY_DELAY_MS
+local TICK_INTERVAL_MS = 20
 
 --------------------------------------------------------------------------
 -- Minimal JSON encode/decode. Only what the bridge protocol needs:
@@ -789,53 +805,55 @@ local function handle_request(req)
 end
 
 --------------------------------------------------------------------------
--- Transport: handshake (synchronous, at mod load) then a persistent
--- serve loop (async-thread reads, game-thread request handling).
+-- Transport: this mod hosts the pipe (via pipe_native, non-blocking --
+-- see the file header for why). One listener instance is always
+-- accepting the next client; each connected client is tracked in
+-- `clients` through its own handshake -> request/response cycle, all
+-- driven from one recurring, non-blocking tick.
 --------------------------------------------------------------------------
 
-local function write_message(pipe, tbl)
-    pipe:write(json.encode(tbl) .. "\n")
-    pipe:flush()
+-- The pending "waiting for the next client" instance: { native = ... }.
+local listening = nil
+
+-- Connected clients: { native = ..., state = "handshake"|"request",
+-- awaiting_line = bool (a read_line_async is currently in flight) }.
+-- Marked `dead = true` for removal rather than spliced out mid-iteration.
+local clients = {}
+
+local function start_listening()
+    local inst, create_err = pipe_native.create_server(PIPE_NAME)
+    if not inst then
+        print(string.format("[UE4SSMCPBridge] create_server failed (%s)\n", tostring(create_err)))
+        return nil
+    end
+    local ok, accept_err = inst:accept_async()
+    if not ok then
+        print(string.format("[UE4SSMCPBridge] accept_async failed to start (%s)\n", tostring(accept_err)))
+        pcall(function() inst:close() end)
+        return nil
+    end
+    return { native = inst }
 end
 
-local connect_with_retry -- forward declaration, used by the serve loop's disconnect path
-
-local serve_loop
-local function schedule_serve(pipe)
-    ExecuteAsync(function() serve_loop(pipe) end)
-end
-
-serve_loop = function(pipe)
-    local line = pipe:read("*l")
-    if line == nil then
-        pcall(function() pipe:close() end)
-        print("[UE4SSMCPBridge] Disconnected, reconnecting...\n")
-        connect_with_retry()
+local function start_next_read(client_entry)
+    local ok, err = client_entry.native:read_line_async()
+    if not ok then
+        print(string.format("[UE4SSMCPBridge] read_line_async failed to start (%s)\n", tostring(err)))
+        pcall(function() client_entry.native:close() end)
+        client_entry.dead = true
         return
     end
-
-    local pok, req = pcall(json.decode, line)
-    if pok and type(req) == "table" and req.type == "request" then
-        ExecuteInGameThread(function()
-            local response = handle_request(req)
-            local wok = pcall(write_message, pipe, response)
-            if not wok then
-                pcall(function() pipe:close() end)
-                print("[UE4SSMCPBridge] Write failed, reconnecting...\n")
-                connect_with_retry()
-                return
-            end
-            schedule_serve(pipe)
-        end)
-    else
-        serve_loop(pipe)
-    end
+    client_entry.awaiting_line = true
 end
 
-local function try_handshake()
-    local pipe, open_err = io.open(PIPE_NAME, "r+b")
-    if not pipe then
-        return nil, open_err
+local function handle_handshake_line(client_entry, line)
+    local pok, hs = pcall(json.decode, line)
+    if not pok or type(hs) ~= "table" or hs.type ~= "handshake" or hs.token ~= TOKEN then
+        pcall(function() client_entry.native:write('{"type":"handshake_ack","ok":false,"error":"bad token"}\n') end)
+        pcall(function() client_entry.native:close() end)
+        client_entry.dead = true
+        print("[UE4SSMCPBridge] Rejected a client: bad handshake token\n")
+        return
     end
 
     local ue4ss_major, ue4ss_minor, ue4ss_hotfix = 0, 0, 0
@@ -844,36 +862,88 @@ local function try_handshake()
     end
     local engine_major = UnrealVersion.GetMajor()
     local engine_minor = UnrealVersion.GetMinor()
-
-    local handshake = string.format(
-        '{"type":"handshake","token":"%s","ue4ss_version":"%d.%d.%d","engine_version":"%d.%d"}',
-        TOKEN, ue4ss_major, ue4ss_minor, ue4ss_hotfix, engine_major, engine_minor
+    local ack = string.format(
+        '{"type":"handshake_ack","ok":true,"ue4ss_version":"%d.%d.%d","engine_version":"%d.%d"}',
+        ue4ss_major, ue4ss_minor, ue4ss_hotfix, engine_major, engine_minor
     )
-    pipe:write(handshake .. "\n")
-    pipe:flush()
-
-    local response = pipe:read("*l")
-    if response == nil then
-        pcall(function() pipe:close() end)
-        return nil, "no response from server"
-    end
-    return pipe, response
-end
-
-connect_with_retry = function()
-    local pipe, result = try_handshake()
-    if pipe then
-        print(string.format("[UE4SSMCPBridge] Connected: %s\n", result))
-        retry_delay_ms = INITIAL_RETRY_DELAY_MS
-        schedule_serve(pipe)
+    if not client_entry.native:write(ack .. "\n") then
+        pcall(function() client_entry.native:close() end)
+        client_entry.dead = true
         return
     end
-    print(string.format(
-        "[UE4SSMCPBridge] Connect failed (%s), retrying in %dms...\n",
-        tostring(result), retry_delay_ms
-    ))
-    ExecuteWithDelay(retry_delay_ms, connect_with_retry)
-    retry_delay_ms = math.min(retry_delay_ms * 2, MAX_RETRY_DELAY_MS)
+
+    print("[UE4SSMCPBridge] Client connected\n")
+    client_entry.state = "request"
+    start_next_read(client_entry)
 end
 
-connect_with_retry()
+local function handle_request_line(client_entry, line)
+    local pok, req = pcall(json.decode, line)
+    if not (pok and type(req) == "table" and req.type == "request") then
+        -- Malformed line -- skip it and keep waiting, same tolerance the
+        -- pre-flip transport had.
+        start_next_read(client_entry)
+        return
+    end
+
+    -- No read is in flight while a request is being handled on the game
+    -- thread, so the tick loop leaves this client alone until it starts
+    -- the next read itself (from inside this same callback).
+    client_entry.awaiting_line = false
+    ExecuteInGameThread(function()
+        local response = handle_request(req)
+        local wok = client_entry.native:write(json.encode(response) .. "\n")
+        if not wok then
+            pcall(function() client_entry.native:close() end)
+            client_entry.dead = true
+            print("[UE4SSMCPBridge] Write failed, client disconnected\n")
+            return
+        end
+        start_next_read(client_entry)
+    end)
+end
+
+local function tick()
+    if listening then
+        local status, err = listening.native:poll_accept()
+        if status == "ready" then
+            local client_entry = { native = listening.native, state = "handshake" }
+            start_next_read(client_entry)
+            table.insert(clients, client_entry)
+            listening = start_listening()
+        elseif status == "error" then
+            print(string.format("[UE4SSMCPBridge] accept failed (%s)\n", tostring(err)))
+            pcall(function() listening.native:close() end)
+            listening = start_listening()
+        end
+        -- "pending": nothing to do yet.
+    else
+        listening = start_listening()
+    end
+
+    for i = #clients, 1, -1 do
+        local c = clients[i]
+        if c.dead then
+            table.remove(clients, i)
+        elseif c.awaiting_line then
+            local status, a, b = c.native:poll_read_line()
+            if status == "ready" then
+                local line = a
+                if c.state == "handshake" then
+                    handle_handshake_line(c, line)
+                else
+                    handle_request_line(c, line)
+                end
+            elseif status == "error" then
+                pcall(function() c.native:close() end)
+                table.remove(clients, i)
+            end
+            -- "pending": nothing to do yet.
+        end
+    end
+
+    ExecuteWithDelay(TICK_INTERVAL_MS, tick)
+end
+
+listening = start_listening()
+ExecuteWithDelay(TICK_INTERVAL_MS, tick)

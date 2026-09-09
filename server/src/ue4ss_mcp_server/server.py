@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
-from ue4ss_mcp_server.bridge import BridgeServer, BridgeState
-from ue4ss_mcp_server.bridge_install import get_or_create_token
+from ue4ss_mcp_server.bridge import BridgeClient, BridgeState, probe_pipe_exists
 from ue4ss_mcp_server.bridge_install import install_bridge_mod as _install_bridge_mod
+from ue4ss_mcp_server.bridge_registry import list_bridges
 from ue4ss_mcp_server.cache import ensure_ref_cached
 from ue4ss_mcp_server.context import resolve_context as _resolve_context
 from ue4ss_mcp_server.crash_parse import parse_crash as _parse_crash
@@ -26,8 +27,10 @@ from ue4ss_mcp_server.upgrade_notes import get_upgrade_notes as _get_upgrade_not
 
 mcp = MCPServer("ue4ss-mcp")
 
-_bridge_state = BridgeState()
-_bridge_server: BridgeServer | None = None
+# One BridgeClient (+ its own BridgeState) per known install, created
+# lazily on first connect attempt -- see _get_or_make_client. Keyed by
+# bridge_id (the resolved install path, see bridge_registry.py).
+_bridge_clients: dict[str, BridgeClient] = {}
 
 # In-memory index cache keyed by (version, api): building it is cheap but
 # not free, and a session will typically call search_api/get_symbol
@@ -156,6 +159,12 @@ def install_bridge_mod(game_install_path: str) -> dict:
     UE4SS.dll and Mods/), not the game's root install folder. Explicit/
     opt-in only -- the bridge is never installed automatically. Takes
     effect on the next game launch or mod reload.
+
+    Each install gets its own persisted identity (a unique pipe name +
+    token) -- returns `{installed, mod_dir, bridge_id}`. `bridge_id`
+    (stable across reinstalls of the same path) is what
+    wait_running_bridge/list_running_bridge and every live tool's
+    `bridge_id` param refer to this game by.
     """
     global _last_install_path
     result = _install_bridge_mod(game_install_path)
@@ -202,29 +211,115 @@ def disable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
     return _disable_mod(install_dir, mod_name)
 
 
+def _get_or_make_client(bridge_id: str) -> BridgeClient | None:
+    client = _bridge_clients.get(bridge_id)
+    if client is not None:
+        return client
+    entry = list_bridges().get(bridge_id)
+    if entry is None:
+        return None
+    client = BridgeClient(entry["pipe_name"], entry["token"], BridgeState())
+    _bridge_clients[bridge_id] = client
+    return client
+
+
 @mcp.tool()
-def bridge_status() -> dict:
-    """Check whether a game is currently connected via the bridge mod,
-    and if so which UE4SS/engine version it reported on handshake.
-    Always safe to call -- reports not-connected rather than erroring.
+def list_running_bridge() -> dict:
+    """List every known bridge install (anything install_bridge_mod has
+    ever been called for, from any session -- this persists across
+    server restarts) and whether it's currently live.
 
-    The bridge mod retries connecting on an exponential backoff (2s,
-    doubling to a 30s ceiling) whenever this server isn't reachable, so
-    after starting this server it can take up to ~30s for a
-    already-running game to show connected -- that's normal, not a
-    broken bridge. This server process also needs to stay alive for the
-    bridge to have anything to connect to: a one-shot script that starts
-    the server, makes one call, and exits will very likely see
-    `connected: false` every time, since the bridge just never got a
-    long-enough window to dial in.
+    `connected: true` means this session already has a live, attached
+    connection to it (previous tool calls with this `bridge_id` will
+    keep working). `running: true` alone (connected: false) means a
+    game is listening on that bridge's pipe but this session hasn't
+    attached yet -- call wait_running_bridge(bridge_id) to attach before
+    using find_object/etc. against it. Always safe to call.
     """
-    return _bridge_state.snapshot()
+    items = []
+    for bridge_id, entry in list_bridges().items():
+        client = _bridge_clients.get(bridge_id)
+        connected = client is not None and client.is_connected()
+        running = connected or probe_pipe_exists(entry["pipe_name"])
+        items.append({"bridge_id": bridge_id, "running": running, "connected": connected})
+    return {"items": items, "returned": len(items), "total_matched": len(items)}
 
 
-def _bridge_request(op: str, params: dict, timeout: float | None = None) -> dict:
-    assert _bridge_server is not None
+@mcp.tool()
+def wait_running_bridge(bridge_id: str | None = None, timeout: float = 30.0) -> dict:
+    """Wait (up to `timeout` seconds) for a bridge to become connectable,
+    then attach to it for subsequent find_object/call_function/etc.
+    calls. Call this before any other live tool -- there's no more
+    always-on background reconnect; connecting is now this one explicit,
+    on-demand action, and it's what actually creates the connection.
+
+    Pass a specific `bridge_id` (from list_running_bridge, or
+    install_bridge_mod's own response) to wait for that exact game, or
+    omit it to wait for whichever known bridge connects first --
+    convenient when there's only one game you're running. Returns
+    `{connected: true, bridge_id, ue4ss_version, engine_version}` on
+    success, `{connected: false, error}` if nothing connected in time.
+    Safe to call again on an already-connected bridge (returns
+    immediately).
+    """
+    registry = list_bridges()
+    if not registry:
+        return {"connected": False, "error": "no bridge installed yet -- call install_bridge_mod first"}
+    if bridge_id is not None and bridge_id not in registry:
+        return {"connected": False, "error": f"unknown bridge_id '{bridge_id}' -- see list_running_bridge"}
+
+    candidates = [bridge_id] if bridge_id else list(registry.keys())
+
+    if len(candidates) == 1:
+        only = candidates[0]
+        client = _get_or_make_client(only)
+        if client.is_connected():
+            return {"connected": True, "bridge_id": only, **client.state.snapshot()}
+        ok, err = client.connect(timeout=timeout)
+        if ok:
+            return {"connected": True, "bridge_id": only, **client.state.snapshot()}
+        return {"connected": False, "bridge_id": only, "error": err}
+
+    deadline = time.time() + timeout
+    last_errors: dict[str, str] = {}
+    while True:
+        for bid in candidates:
+            client = _get_or_make_client(bid)
+            if client.is_connected():
+                return {"connected": True, "bridge_id": bid, **client.state.snapshot()}
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                continue
+            ok, err = client.connect(timeout=min(1.0, remaining))
+            if ok:
+                return {"connected": True, "bridge_id": bid, **client.state.snapshot()}
+            last_errors[bid] = err
+        if time.time() >= deadline:
+            return {"connected": False, "error": f"no bridge connected within {timeout}s", "attempts": last_errors}
+
+
+def _resolve_client(bridge_id: str | None) -> tuple[BridgeClient | None, dict | None]:
+    if bridge_id is not None:
+        client = _bridge_clients.get(bridge_id)
+        if client is None or not client.is_connected():
+            return None, {"error": f"bridge '{bridge_id}' is not connected -- call wait_running_bridge first"}
+        return client, None
+
+    connected = [(bid, c) for bid, c in _bridge_clients.items() if c.is_connected()]
+    if not connected:
+        return None, {"error": "not connected -- call wait_running_bridge first"}
+    if len(connected) > 1:
+        ids = [bid for bid, _ in connected]
+        return None, {"error": f"multiple bridges connected, pass bridge_id to pick one: {ids}"}
+    return connected[0][1], None
+
+
+def _bridge_request(op: str, params: dict, bridge_id: str | None = None, timeout: float | None = None) -> dict:
+    client, err = _resolve_client(bridge_id)
+    if err is not None:
+        return err
     kwargs = {} if timeout is None else {"timeout": timeout}
-    response = _bridge_server.send_request(op, params, **kwargs)
+    response = client.send_request(op, params, **kwargs)
     if not response.get("ok"):
         return {"error": response.get("error", "unknown bridge error")}
     return response.get("result", {})
@@ -246,15 +341,17 @@ def find_object(
     path: str | None = None,
     limit: int | None = None,
     cursor: str | None = None,
+    bridge_id: str | None = None,
 ) -> dict:
     """Find live UObject instances in the connected game, without dumping
     the whole object graph (which can have hundreds of thousands of
     entries). Pass exactly one of `path` (an exact object path, resolved
     via StaticFindObject -- cheap, single result) or `class_name` (a short
     class name, resolved via FindAllOf and optionally narrowed with a
-    case-insensitive substring `name_pattern`). Requires the bridge to be
-    connected (see bridge_status); returns `{"error": "not connected"}`
-    otherwise.
+    case-insensitive substring `name_pattern`). Requires a connected
+    bridge (see wait_running_bridge); returns `{"error": "..."}`
+    otherwise. `bridge_id` picks which game when more than one is
+    connected at once -- omit it when there's only one.
 
     Returns a paginated envelope of `{handle, class, name}` -- pass a
     result's `handle` to describe_object/call_function to drill in.
@@ -271,11 +368,11 @@ def find_object(
     friendly `path` lookup instead whenever possible.
     """
     params = {"class": class_name, "name_pattern": name_pattern, "path": path, "limit": limit, "cursor": cursor}
-    return _bridge_request("find_object", params)
+    return _bridge_request("find_object", params, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def describe_object(handle: str, limit: int | None = None, cursor: str | None = None) -> dict:
+def describe_object(handle: str, limit: int | None = None, cursor: str | None = None, bridge_id: str | None = None) -> dict:
     """Get the property map for one live object found via find_object.
 
     Properties are paginated (like every list-shaped tool here) since a
@@ -305,11 +402,11 @@ def describe_object(handle: str, limit: int | None = None, cursor: str | None = 
     returns, that's a real possibility, not just a slow query. `limit=1`
     narrows which property faulted, but can't prevent the crash.
     """
-    return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor})
+    return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor}, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def call_function(handle: str, function_name: str, args: list | None = None) -> dict:
+def call_function(handle: str, function_name: str, args: list | None = None, bridge_id: str | None = None) -> dict:
     """Call a UFunction (or any callable member) on a live object found via
     find_object, e.g. to invoke a mod's own testable Lua-callable function
     or a native UFunction. This mutates live game state -- use deliberately,
@@ -331,11 +428,15 @@ def call_function(handle: str, function_name: str, args: list | None = None) -> 
     haven't independently confirmed the real type of, and treat any
     UFunction with non-primitive parameters as unsafe to guess at.
     """
-    return _bridge_request("call_function", {"handle": handle, "function_name": function_name, "args": args or []})
+    return _bridge_request(
+        "call_function",
+        {"handle": handle, "function_name": function_name, "args": args or []},
+        bridge_id=bridge_id,
+    )
 
 
 @mcp.tool()
-def register_hook(ufunction_name: str, when: str = "both") -> dict:
+def register_hook(ufunction_name: str, when: str = "both", bridge_id: str | None = None) -> dict:
     """Register a callback on a UFunction so its calls can be observed
     without polling describe_object in a loop. `ufunction_name` is a full
     UFunction path (e.g. "/Script/Engine.PlayerController:ClientRestart");
@@ -350,20 +451,20 @@ def register_hook(ufunction_name: str, when: str = "both") -> dict:
     consistent with every other tool here never sending unsolicited data.
     Call unregister_hook when done to stop buffering and free the hook.
     """
-    return _bridge_request("register_hook", {"ufunction_name": ufunction_name, "when": when})
+    return _bridge_request("register_hook", {"ufunction_name": ufunction_name, "when": when}, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def unregister_hook(hook_id: str) -> dict:
+def unregister_hook(hook_id: str, bridge_id: str | None = None) -> dict:
     """Stop a hook registered via register_hook or a watch registered via
     watch_new_object -- same tool for both, since they're both just an
     opaque id for something buffering events on the bridge side.
     """
-    return _bridge_request("unregister_hook", {"hook_id": hook_id})
+    return _bridge_request("unregister_hook", {"hook_id": hook_id}, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def watch_new_object(class_name: str) -> dict:
+def watch_new_object(class_name: str, bridge_id: str | None = None) -> dict:
     """Get notified when a new instance of `class_name` is constructed
     (inheritance-aware -- watching a base class also catches derived
     classes), without polling find_object in a loop. `class_name` doesn't
@@ -383,11 +484,11 @@ def watch_new_object(class_name: str) -> dict:
     cancel, so this takes effect from the class's next construction
     onward rather than immediately.
     """
-    return _bridge_request("watch_new_object", {"class_name": class_name})
+    return _bridge_request("watch_new_object", {"class_name": class_name}, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None = None) -> dict:
+def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None = None, bridge_id: str | None = None) -> dict:
     """Drain buffered fire events for a hook (register_hook) or watch
     (watch_new_object). Unlike every other paginated tool here, `cursor`
     is never null in the response -- it's always "resume from here next
@@ -397,11 +498,11 @@ def poll_hook_events(hook_id: str, limit: int | None = None, cursor: str | None 
     polled and the oldest ones were evicted (buffer caps at 200 events
     per hook/watch) -- poll more often if that matters for your use case.
     """
-    return _bridge_request("poll_hook_events", {"hook_id": hook_id, "limit": limit, "cursor": cursor})
+    return _bridge_request("poll_hook_events", {"hook_id": hook_id, "limit": limit, "cursor": cursor}, bridge_id=bridge_id)
 
 
 @mcp.tool()
-def reload_mod(mod_name: str) -> dict:
+def reload_mod(mod_name: str, bridge_id: str | None = None) -> dict:
     """Hot-reload a Lua mod UE4SS is ALREADY running -- e.g. after editing
     the script of a mod you enabled earlier this session -- via
     RestartMod. Queued for the next update cycle, not immediate.
@@ -427,7 +528,7 @@ def reload_mod(mod_name: str) -> dict:
     to click that button (or relaunch the game) once. After that,
     reload_mod works for iterating on it.
     """
-    return _bridge_request("reload_mod", {"mod_name": mod_name})
+    return _bridge_request("reload_mod", {"mod_name": mod_name}, bridge_id=bridge_id)
 
 
 _DUMP_KINDS = ("actors", "objects", "sdk", "uht")
@@ -458,7 +559,7 @@ def _load_dump_entries(kind: str, install_dir: Path) -> list[DumpEntry]:
 
 
 @mcp.tool()
-def dump_and_index(kind: str, game_install_path: str | None = None) -> dict:
+def dump_and_index(kind: str, game_install_path: str | None = None, bridge_id: str | None = None) -> dict:
     """Trigger one of UE4SS's own bulk dumpers and index its output for
     search_dump, without ever inlining the dump itself (some of these
     run to hundreds of thousands of lines or thousands of files).
@@ -492,7 +593,7 @@ def dump_and_index(kind: str, game_install_path: str | None = None) -> dict:
     if install_dir is None:
         return {"error": "game_install_path not given, and install_bridge_mod hasn't been called this session"}
 
-    response = _bridge_request("dump_and_index", {"kind": kind}, timeout=_DUMP_REQUEST_TIMEOUT_S)
+    response = _bridge_request("dump_and_index", {"kind": kind}, bridge_id=bridge_id, timeout=_DUMP_REQUEST_TIMEOUT_S)
     if "error" in response:
         return response
 
@@ -523,7 +624,7 @@ def search_dump(corpus_id: str, query: str, limit: int | None = None, cursor: st
 
 
 @mcp.tool()
-def exec_lua(code: str) -> dict:
+def exec_lua(code: str, bridge_id: str | None = None) -> dict:
     """Compile and run arbitrary Lua in the connected game, on the game
     thread. Last resort: every structured tool here (find_object,
     call_function, etc.) exists specifically so this isn't usually
@@ -554,7 +655,7 @@ def exec_lua(code: str) -> dict:
     confirmed are real, documented UE4SS API, never ones you're guessing
     might exist.
     """
-    return _bridge_request("exec_lua", {"code": code})
+    return _bridge_request("exec_lua", {"code": code}, bridge_id=bridge_id)
 
 
 def _read_path_or_text(path: str | None, text: str | None) -> str | dict:
@@ -630,9 +731,9 @@ def parse_crash(path: str | None = None, text: str | None = None) -> dict:
 
 
 def main() -> None:
-    global _bridge_server
-    _bridge_server = BridgeServer(get_or_create_token(), _bridge_state)
-    _bridge_server.start()
+    # No background server to start anymore -- the bridge mod hosts the
+    # pipe now, and this process only connects out on demand (see
+    # wait_running_bridge). Nothing to do here but run the MCP server.
     mcp.run()
 
 

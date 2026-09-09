@@ -32,13 +32,19 @@
   doesn't help with any of this.
 - To confirm your own mod actually ran, `search_log` for its `print()`
   output — `parse_log`'s structured fields won't show arbitrary text.
-- The bridge retries on a backoff (2s→30s ceiling) when this server
-  isn't reachable — a fresh game can take up to ~30s to show connected,
-  and a one-shot script that starts the server for a single call will
-  likely never see it connect at all. Keep one server process alive
-  across calls.
-- `bridge_status` is also checked lazily beyond that — may show stale
-  "connected" until the next live call fails.
+- Call `wait_running_bridge` before any live tool — connecting is an
+  explicit, on-demand action now, not an always-on background retry.
+  `list_running_bridge` shows every known game and whether it's live.
+  Liveness is otherwise checked lazily: a connected bridge may show
+  stale `connected: true` until the next live call actually fails.
+- More than one agent can connect to the same running game at once (the
+  bridge mod itself accepts several simultaneous connections) — only
+  pass `bridge_id` to a live tool when more than one game is connected
+  at the same time; omit it otherwise.
+- Reinstalling the bridge mod over an already-running game can fail:
+  its companion native module (`ue4ssmcp_pipe.dll`) stays locked in
+  memory while loaded. Close the game before calling `install_bridge_mod`
+  again, then relaunch.
 - This server won't tell you which UE4SS version/fork a game needs, or
   install UE4SS. Out of scope by design.
 

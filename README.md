@@ -34,13 +34,14 @@ uv sync
 uv run ue4ss-mcp-server   # stdio transport
 ```
 
-Call `install_bridge_mod` once against your UE4SS install directory to
-enable the live tools below.
+Call `install_bridge_mod` once against your UE4SS install directory,
+then `wait_running_bridge` to connect before using any live tool below.
 
-The bridge mod reconnects on a backoff (2s, doubling to a 30s ceiling)
-whenever this server isn't reachable, so a fresh game can take up to
-~30s to show connected — keep one server process alive across calls
-rather than starting it fresh for a single one-shot call.
+Each installed game gets its own identity (`bridge_id`) and can be
+connected to independently — including by more than one agent at once,
+since the bridge mod itself accepts several simultaneous connections.
+`bridge_id` only needs to be passed to a live tool when more than one
+game is connected at the same time; omit it otherwise.
 
 ## Tools
 
@@ -53,7 +54,8 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 | `get_upgrade_notes` | no | What changed between two UE4SS versions |
 | `install_bridge_mod` | no | Install this project's bridge mod into a UE4SS `Mods/` folder |
 | `enable_mod` / `disable_mod` | no | Flip a mod on/off in `mods.txt` |
-| `bridge_status` | yes | Whether a game is currently connected |
+| `list_running_bridge` | no | List every known game and whether it's currently connected |
+| `wait_running_bridge` | yes | Connect to a game (waits up to a timeout) before using the tools below |
 | `find_object` | yes | Locate a live `UObject` (or `UFunction`) by class or path |
 | `describe_object` | yes | Inspect an object's properties, or a `UFunction`'s parameters |
 | `call_function` | yes | Invoke a method on a live object |
@@ -72,3 +74,4 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 - **A mod's first load needs a human.** `enable_mod` + `reload_mod` can't start a mod UE4SS has never loaded — click "Restart All Mods" in the UE4SS console (or relaunch) once, then `reload_mod` works.
 - **A broad live query can stall the game, or on some builds crash it.** `find_object` on `Actor`/`UObject`, or `dump_and_index`'s `objects`/`sdk`/`uht` kinds, run an unbounded native scan on the game thread — pagination bounds the response, not the scan itself.
 - **`describe_object`/`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks a UFunction call's argument *count* but not *type*; reading a property's value, or calling any undocumented/guessed method on a reflected wrapper object, is itself a native call that isn't guaranteed safe on every engine build. None of this is catchable from Lua.
+- **Reinstalling over a running game can fail.** The bridge mod's companion native module (`ue4ssmcp_pipe.dll`) stays locked in memory while the game has it loaded — `install_bridge_mod` against an already-running install with the mod loaded can fail to overwrite it. Close the game first, then reinstall and relaunch.

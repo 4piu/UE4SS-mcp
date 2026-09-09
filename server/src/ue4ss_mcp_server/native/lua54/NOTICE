@@ -1,0 +1,18 @@
+This directory is Lua 5.4.7's core source (lapi.c, lauxlib.c, lstate.c,
+etc.), vendored verbatim -- including luauser.c, a UE4SS-specific
+addition, not part of stock Lua -- from:
+
+    https://github.com/UE4SS-RE/RE-UE4SS/tree/main/deps/first/LuaRaw
+
+Vendored (rather than linked against UE4SS.dll) because UE4SS.dll does
+not export the Lua C API -- confirmed via `dumpbin /exports` against a
+real installed build. See dev-notes/progress.md's "Transport flip" entry
+for why this is safe: this module statically links its own copy of the
+exact same source UE4SS itself compiles, so the two independently-built
+copies agree on lua_State's internal layout when sharing the same
+pointer.
+
+Lua itself is MIT-licensed (Copyright (C) 1994-2024 Lua.org, PUC-Rio;
+full text embedded at the end of lua.h, per Lua's own convention). The
+RE-UE4SS packaging of this directory carries its own MIT LICENSE file
+(Copyright (c) 2022 Narknon) at the path above.

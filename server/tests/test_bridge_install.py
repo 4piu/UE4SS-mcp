@@ -12,10 +12,15 @@ def _make_fake_ue4ss_install(tmp_path: Path, mods_txt_content: str | None) -> Pa
     return install_dir
 
 
-def test_install_bridge_mod_copies_and_substitutes_token(tmp_path, monkeypatch):
+def _mock_bridge_identity(monkeypatch, pipe_name: str = r"\\.\pipe\ue4ss-mcp-deadbeef", token: str = "deadbeef"):
     monkeypatch.setattr(
-        "ue4ss_mcp_server.bridge_install.get_or_create_token", lambda: "deadbeef"
+        "ue4ss_mcp_server.bridge_install.get_or_create_bridge",
+        lambda _path: {"pipe_name": pipe_name, "token": token},
     )
+
+
+def test_install_bridge_mod_copies_and_substitutes_token_and_pipe_name(tmp_path, monkeypatch):
+    _mock_bridge_identity(monkeypatch)
     install_dir = _make_fake_ue4ss_install(tmp_path, "ConsoleEnablerMod : 1\n")
 
     result = install_bridge_mod(str(install_dir))
@@ -25,6 +30,20 @@ def test_install_bridge_mod_copies_and_substitutes_token(tmp_path, monkeypatch):
     content = main_lua.read_text(encoding="utf-8")
     assert '"deadbeef"' in content
     assert "__BRIDGE_TOKEN__" not in content
+    # the pipe name placeholder must be replaced with a Lua-escaped
+    # version of the real name (each backslash doubled) so Lua parses
+    # the string literal back to the real \\.\pipe\... value.
+    assert r"\\\\.\\pipe\\ue4ss-mcp-deadbeef" in content
+    assert "__BRIDGE_PIPE_NAME__" not in content
+
+
+def test_install_bridge_mod_returns_bridge_id(tmp_path, monkeypatch):
+    _mock_bridge_identity(monkeypatch)
+    install_dir = _make_fake_ue4ss_install(tmp_path, "ConsoleEnablerMod : 1\n")
+
+    result = install_bridge_mod(str(install_dir))
+
+    assert result["bridge_id"] == str(install_dir.resolve())
 
 
 def test_install_bridge_mod_missing_mods_dir_reports_error(tmp_path):
@@ -34,9 +53,7 @@ def test_install_bridge_mod_missing_mods_dir_reports_error(tmp_path):
 
 
 def test_install_bridge_mod_inserts_before_keybinds(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "ue4ss_mcp_server.bridge_install.get_or_create_token", lambda: "tok"
-    )
+    _mock_bridge_identity(monkeypatch)
     install_dir = _make_fake_ue4ss_install(
         tmp_path, "ConsoleEnablerMod : 1\n; Built-in keybinds, do not move up!\nKeybinds : 1\n"
     )
@@ -51,9 +68,7 @@ def test_install_bridge_mod_inserts_before_keybinds(tmp_path, monkeypatch):
 
 
 def test_install_bridge_mod_no_mods_txt_creates_one(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "ue4ss_mcp_server.bridge_install.get_or_create_token", lambda: "tok"
-    )
+    _mock_bridge_identity(monkeypatch)
     install_dir = _make_fake_ue4ss_install(tmp_path, None)
 
     result = install_bridge_mod(str(install_dir))
@@ -64,9 +79,7 @@ def test_install_bridge_mod_no_mods_txt_creates_one(tmp_path, monkeypatch):
 
 
 def test_install_bridge_mod_inserts_above_keybinds_comment_not_between(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "ue4ss_mcp_server.bridge_install.get_or_create_token", lambda: "tok"
-    )
+    _mock_bridge_identity(monkeypatch)
     install_dir = _make_fake_ue4ss_install(
         tmp_path, "ConsoleEnablerMod : 1\n; Built-in keybinds, do not move up!\nKeybinds : 1\n"
     )
@@ -82,9 +95,7 @@ def test_install_bridge_mod_inserts_above_keybinds_comment_not_between(tmp_path,
 
 
 def test_install_bridge_mod_idempotent_when_already_enabled(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "ue4ss_mcp_server.bridge_install.get_or_create_token", lambda: "tok"
-    )
+    _mock_bridge_identity(monkeypatch)
     install_dir = _make_fake_ue4ss_install(tmp_path, "UE4SSMCPBridge : 1\n")
 
     result = install_bridge_mod(str(install_dir))

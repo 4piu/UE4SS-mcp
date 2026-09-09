@@ -1,19 +1,24 @@
-"""Named-pipe server accepting bridge-mod connections.
+"""Named-pipe client connecting out to a bridge mod's own hosted pipe.
 
-Blocking win32 pipe I/O lives entirely in background/helper threads so it
-never touches the MCP server's asyncio event loop. See dev-notes/spec.md
-§8 for why a named pipe rather than TCP/LuaSocket, and dev-notes/
-progress.md for the empirical test that verified stock Lua's io.open()
-can act as a client against it.
+Transport flip (see dev-notes/progress.md): the bridge mod hosts the
+named pipe now (via a small companion native Lua module, since Lua's
+stdlib can't create a pipe server) and this server connects out to it,
+rather than the other way around. This eliminates the mod-side poll-
+and-back-off reconnect loop entirely -- connecting is now a synchronous,
+on-demand action (`wait_running_bridge`/`list_running_bridge` in
+server.py drive it), not an always-running background accept thread.
+Each known install gets its own uniquely-named pipe, so multiple games
+(and multiple agents attached to the same game, since the bridge's
+native pipe allows more than one simultaneous instance) no longer
+collide on one global pipe name the way they did before.
 
-Threading note: a synchronous (non-overlapped) named pipe handle only
-supports one in-flight I/O operation at a time -- issuing a blocking
-ReadFile on one thread while another thread WriteFiles the same handle
-deadlocks (confirmed empirically while building M4's request/response
-protocol, not just docs). So after the handshake, no thread reads the
-pipe unless it's about to; `send_request` owns the handle exclusively
-(via `_io_lock`) for the full duration of one write-then-read exchange,
-and the accept-loop thread sits idle (no pending I/O) between requests.
+Threading note, still true post-flip: a synchronous (non-overlapped)
+named pipe handle only supports one in-flight I/O operation at a time --
+issuing a blocking ReadFile on one thread while another thread WriteFiles
+the same handle deadlocks (confirmed empirically while building M4's
+request/response protocol, not just docs). `send_request` owns the
+handle exclusively (via `_io_lock`) for the full duration of one
+write-then-read exchange.
 
 A timeout on that read needs to abandon it without blocking, and plain
 `CloseHandle` can itself block until an in-flight synchronous read on
@@ -38,9 +43,9 @@ import pywintypes
 import win32file
 import win32pipe
 
-PIPE_NAME = r"\\.\pipe\ue4ss-mcp"
 _BUFFER_SIZE = 65536
 _REQUEST_TIMEOUT_S = 10.0
+_CONNECT_POLL_INTERVAL_S = 0.2
 
 _kernel32 = ctypes.windll.kernel32
 _kernel32.CancelIoEx.restype = ctypes.c_int
@@ -52,6 +57,23 @@ def _cancel_pending_io(pipe) -> None:
         _kernel32.CancelIoEx(int(pipe), None)
     except (OSError, ValueError):
         pass
+
+
+def probe_pipe_exists(pipe_name: str) -> bool:
+    """Cheap, non-connecting check for whether a bridge's pipe currently
+    has a listener (a game running with the bridge mod loaded) --
+    `list_running_bridge` uses this rather than fully connecting/
+    handshaking just to report status, since that would needlessly
+    consume one of the bridge's limited connection slots.
+    """
+    try:
+        win32pipe.WaitNamedPipe(pipe_name, 0)
+        return True
+    except pywintypes.error as exc:
+        # ERROR_FILE_NOT_FOUND (2): no server present at all.
+        # ERROR_SEM_TIMEOUT (121, from a 0ms wait): a server exists but
+        # every instance is currently busy -- still counts as "running".
+        return exc.winerror == 121
 
 
 @dataclass
@@ -82,12 +104,9 @@ class BridgeState:
             }
 
 
-class BridgeServer:
-    """Accepts one bridge-mod connection at a time, forever.
-
-    Reconnects are expected often (the game restarts constantly during
-    modding iteration) -- after a client disconnects, a fresh pipe
-    instance is created and the loop waits for the next connection.
+class BridgeClient:
+    """Connects out to one bridge mod's hosted pipe and exchanges
+    request/response messages with it.
 
     Liveness between requests is detected lazily: nothing polls an idle
     connection, so a game that vanishes without a call in flight isn't
@@ -95,144 +114,89 @@ class BridgeServer:
     revisit only if that staleness becomes a real problem.
     """
 
-    def __init__(self, expected_token: str, state: BridgeState) -> None:
+    def __init__(self, pipe_name: str, expected_token: str, state: BridgeState) -> None:
+        self.pipe_name = pipe_name
         self.expected_token = expected_token
         self.state = state
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
         self._pipe = None
-        self._active_handle_lock = threading.Lock()
         self._io_lock = threading.Lock()
         self._read_buffer = b""
-        self._torn_down: threading.Event | None = None
 
-    def start(self) -> None:
-        self._thread.start()
+    def is_connected(self) -> bool:
+        return self._pipe is not None and self.state.snapshot()["connected"]
 
-    def stop(self) -> None:
-        """Stop accepting/serving and block until the accept thread has
-        actually exited (not just been signaled to).
+    def connect(self, timeout: float) -> tuple[bool, str | None]:
+        """Try to connect and handshake within `timeout` seconds.
 
-        The accept loop spends most of its life inside a blocking
-        `ConnectNamedPipe` call that `self._stop` alone can't interrupt --
-        closing the handle it's blocked on from this thread forces that
-        call to error out so the loop can observe `_stop` and exit.
-        Joining afterwards matters just as much as the close: without it,
-        a caller that immediately creates a new BridgeServer (any test
-        that does, since PIPE_NAME is a fixed global name) can race a
-        client connection against this instance's still-in-progress
-        teardown and land on the dying pipe instead of the new one.
-
-        A single close-then-join isn't quite enough, for two reasons
-        confirmed empirically while chasing a real hang here: (1) plain
-        `CloseHandle` does *not* reliably interrupt a pending
-        `ConnectNamedPipe` on another thread the way it does a pending
-        `ReadFile` -- that needs `CancelIoEx` first. (2) there's a narrow
-        window, right as one connection's cleanup hands off to the next
-        pipe instance, where `self._pipe` is briefly `None` -- a `stop()`
-        landing exactly there would see nothing to cancel while the
-        accept loop goes on to block on a *new* instance forever. So this
-        polls cancel+close+join instead of doing it once.
+        Retries on the client-side CreateFile failing (no server up yet,
+        or every instance currently busy) rather than the old mod-side
+        poll-and-back-off -- this is now the one place a caller actually
+        waits, and only when explicitly asked to (`wait_running_bridge`).
         """
-        self._stop.set()
-        deadline = time.time() + 5.0
-        while self._thread.is_alive() and time.time() < deadline:
-            torn_down = self._torn_down
-            if torn_down is not None:
-                torn_down.set()
-            with self._active_handle_lock:
-                pipe = self._pipe
-            if pipe is not None:
-                _cancel_pending_io(pipe)
-                try:
-                    win32file.CloseHandle(pipe)
-                except pywintypes.error:
-                    pass
-            self._thread.join(timeout=0.1)
-
-    def _create_pipe_instance(self):
-        """CreateNamedPipe, retrying briefly on ERROR_PIPE_BUSY (231).
-
-        With `nMaxInstances=1`, Windows doesn't always free the previous
-        instance's slot the instant its handle is closed -- there can be
-        a short OS-internal delay (confirmed empirically: back-to-back
-        create/close cycles hit this often enough to matter). Retrying
-        beats letting `_run` die permanently on a transient race.
-        """
-        last_exc = None
-        for _ in range(40):
-            if self._stop.is_set():
-                raise pywintypes.error(0, "CreateNamedPipe", "stopping")
+        deadline = time.time() + timeout
+        last_exc: pywintypes.error | None = None
+        pipe = None
+        while time.time() < deadline:
             try:
-                return win32pipe.CreateNamedPipe(
-                    PIPE_NAME,
-                    win32pipe.PIPE_ACCESS_DUPLEX,
-                    win32pipe.PIPE_TYPE_BYTE
-                    | win32pipe.PIPE_READMODE_BYTE
-                    | win32pipe.PIPE_WAIT,
-                    1,
-                    _BUFFER_SIZE,
-                    _BUFFER_SIZE,
+                pipe = win32file.CreateFile(
+                    self.pipe_name,
+                    win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                    0,
+                    None,
+                    win32file.OPEN_EXISTING,
                     0,
                     None,
                 )
+                break
             except pywintypes.error as exc:
                 last_exc = exc
-                if exc.winerror != 231:  # ERROR_PIPE_BUSY
-                    raise
-                time.sleep(0.05)
-        raise last_exc
+                time.sleep(_CONNECT_POLL_INTERVAL_S)
+        else:
+            return False, f"could not connect within {timeout}s ({last_exc})"
 
-    def _run(self) -> None:
-        while not self._stop.is_set():
+        self._read_buffer = b""
+        try:
+            handshake = {"type": "handshake", "token": self.expected_token}
+            win32file.WriteFile(pipe, (json.dumps(handshake) + "\n").encode("utf-8"))
+            line = self._read_line(pipe)
+            if line is None:
+                raise ConnectionError("no handshake response")
+            ack = json.loads(line.decode("utf-8"))
+            if not ack.get("ok"):
+                raise ConnectionError(ack.get("error", "handshake rejected"))
+        except (pywintypes.error, ConnectionError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             try:
-                pipe = self._create_pipe_instance()
+                win32file.CloseHandle(pipe)
             except pywintypes.error:
-                continue
-            with self._active_handle_lock:
-                self._pipe = pipe
-            self._read_buffer = b""
-            self._torn_down = threading.Event()
-            try:
-                win32pipe.ConnectNamedPipe(pipe, None)
-                if self._stop.is_set():
-                    break
-                self._do_handshake(pipe)
-                self._wait_for_teardown()
-            except Exception:
                 pass
-            finally:
-                try:
-                    win32file.CloseHandle(pipe)
-                except pywintypes.error:
-                    pass
-                with self._active_handle_lock:
-                    self._pipe = None
-                self.state.mark_disconnected()
+            return False, str(exc)
 
-    def _wait_for_teardown(self) -> None:
-        torn_down = self._torn_down
-        while not self._stop.is_set() and not torn_down.is_set():
-            torn_down.wait(timeout=0.5)
-
-    def _do_handshake(self, pipe) -> None:
-        line = self._read_line(pipe)
-        if line is None:
-            raise ConnectionError("client disconnected before handshake")
-
-        msg = json.loads(line.decode("utf-8"))
-        if msg.get("type") != "handshake":
-            raise ConnectionError("expected handshake as first message")
-
-        if msg.get("token") != self.expected_token:
-            self._write_message(pipe, {"type": "handshake_ack", "ok": False, "error": "bad token"})
-            raise ConnectionError("bad token")
-
+        self._pipe = pipe
         self.state.mark_connected(
-            ue4ss_version=msg.get("ue4ss_version", "unknown"),
-            engine_version=msg.get("engine_version", "unknown"),
+            ue4ss_version=ack.get("ue4ss_version", "unknown"),
+            engine_version=ack.get("engine_version", "unknown"),
         )
-        self._write_message(pipe, {"type": "handshake_ack", "ok": True})
+        return True, None
+
+    def disconnect(self) -> None:
+        pipe = self._pipe
+        self._pipe = None
+        if pipe is not None:
+            _cancel_pending_io(pipe)
+            try:
+                win32file.CloseHandle(pipe)
+            except pywintypes.error:
+                pass
+        self.state.mark_disconnected()
+
+    def _teardown_pipe(self, pipe) -> None:
+        if self._pipe is pipe:
+            self._pipe = None
+        try:
+            win32file.CloseHandle(pipe)
+        except pywintypes.error:
+            pass
+        self.state.mark_disconnected()
 
     def _read_line(self, pipe) -> bytes | None:
         while b"\n" not in self._read_buffer:
@@ -243,23 +207,6 @@ class BridgeServer:
         line, self._read_buffer = self._read_buffer.split(b"\n", 1)
         return line
 
-    @staticmethod
-    def _write_message(pipe, payload: dict) -> None:
-        win32file.WriteFile(pipe, (json.dumps(payload) + "\n").encode("utf-8"))
-
-    def _teardown_pipe(self, pipe) -> None:
-        with self._active_handle_lock:
-            if self._pipe is pipe:
-                self._pipe = None
-        try:
-            win32file.CloseHandle(pipe)
-        except pywintypes.error:
-            pass
-        self.state.mark_disconnected()
-        torn_down = self._torn_down
-        if torn_down is not None:
-            torn_down.set()
-
     def _blocking_read_line(self, pipe, result_box: dict) -> None:
         try:
             result_box["line"] = self._read_line(pipe)
@@ -269,12 +216,12 @@ class BridgeServer:
     def send_request(self, op: str, params: dict, timeout: float = _REQUEST_TIMEOUT_S) -> dict:
         """Send a request to the connected bridge mod and block for its response.
 
-        Safe to call whether or not a game is connected -- returns a clean
-        `{"ok": False, "error": "not connected"}` rather than raising,
-        matching every other bridge tool's "report not connected" contract.
-        Serialized via `_io_lock`: only one request is ever in flight on
-        the pipe at a time, matching the bridge mod's own one-at-a-time
-        read/dispatch/write loop.
+        Safe to call whether or not currently connected -- returns a
+        clean `{"ok": False, "error": "not connected"}` rather than
+        raising, matching every other bridge tool's "report not
+        connected" contract. Serialized via `_io_lock`: only one request
+        is ever in flight on the pipe at a time, matching the bridge
+        mod's own one-at-a-time read/dispatch/write loop for this client.
         """
         with self._io_lock:
             pipe = self._pipe
