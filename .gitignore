@@ -1,3 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+
 # Prerequisites
 *.d
 
@@ -26,8 +34,8 @@
 # ...except the bridge mod's own prebuilt companion module -- checked in
 # deliberately so installing the mod needs no local C build step (it
 # only touches Lua's stable C API, so one prebuilt binary works across
-# every UE4SS version/game; see server/src/ue4ss_mcp_server/native/).
-!server/src/ue4ss_mcp_server/bridge_mod_template/scripts/*.dll
+# every UE4SS version/game; see src/ue4ss_mcp_server/native/).
+!src/ue4ss_mcp_server/bridge_mod_template/scripts/*.dll
 
 
 # Fortran module files
@@ -66,7 +74,7 @@ compile_commands.json
 
 # ...except real UE4SS.log samples kept as test fixtures (any subfolder --
 # this bit twice now, first for fixtures/*.log, then fixtures/crash_samples/*.log)
-!server/tests/fixtures/**/*.log
+!tests/fixtures/**/*.log
 
 # vcpkg
 vcpkg_installed/

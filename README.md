@@ -18,7 +18,7 @@ straight from GitHub via `uvx` — no clone needed:
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/4piu/UE4SS-mcp#subdirectory=server",
+        "git+https://github.com/4piu/UE4SS-mcp@v0.2.0",
         "ue4ss-mcp-server"
       ]
     }
@@ -26,10 +26,14 @@ straight from GitHub via `uvx` — no clone needed:
 }
 ```
 
+The tag is pinned deliberately — an installed bridge mod is tied to the
+server version that installed it, so an unpinned config could silently
+pick up a future breaking change on `main`. Bump it yourself when you
+want to upgrade (and reinstall the bridge mod after).
+
 Or from a local clone:
 
 ```bash
-cd server
 uv sync
 uv run ue4ss-mcp-server   # stdio transport
 ```
