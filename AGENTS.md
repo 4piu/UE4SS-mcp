@@ -13,7 +13,8 @@
 - `watch_new_object`'s `class_name` is a full path
   (`/Script/Engine.Actor`), not `find_object`'s short form.
 - `dump_and_index`'s `objects`/`sdk`/`uht` kinds can take a minute-plus
-  and stall the game; `actors` is cheap.
+  and stall the game, or on some builds crash it outright with no
+  output; `actors` is cheap.
 - `call_function`/`exec_lua` mutate live state. UE4SS checks argument
   *count* but not *type* — a count-correct call with the wrong Lua value
   for a non-primitive parameter (FName/struct/object) can crash the
@@ -21,6 +22,14 @@
   a UFunction with any non-primitive parameter, get its handle via
   `find_object(path="/Script/Class:Function")` and `describe_object` it
   to see the real parameter types — only pass raw primitives otherwise.
+- `describe_object`'s property-value reads carry the same uncatchable-
+  crash risk as `call_function`, but with no argument of yours to blame:
+  on a game whose engine build doesn't match UE4SS's assumptions (e.g. a
+  modified/forked engine), just reading a property's value can be an
+  out-of-bounds native access. `exec_lua` code that calls an
+  undocumented/guessed method on any reflected wrapper object (not just
+  a UFunction you invoke on purpose) carries the same risk — `pcall`
+  doesn't help with any of this.
 - To confirm your own mod actually ran, `search_log` for its `print()`
   output — `parse_log`'s structured fields won't show arbitrary text.
 - The bridge retries on a backoff (2s→30s ceiling) when this server

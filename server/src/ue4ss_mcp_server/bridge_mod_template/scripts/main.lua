@@ -281,6 +281,27 @@ local function serialize_value(v)
         return { type = "object", handle = register_handle(v), full_name = full_name }
     end
 
+    -- A plain Lua table (not a UE4SS object -- those already matched one
+    -- of the probes above) has no ToString/IsValid to key off of, so
+    -- without this branch it falls straight to the tostring() fallback
+    -- below and comes back as an opaque "table: 0x..." address instead
+    -- of its actual contents. json.encode already knows how to render a
+    -- table of {type,value}-tagged wrappers as a JSON array or object
+    -- (see is_array) -- recurse into it here rather than opaquing it.
+    if lt == "table" then
+        local out = {}
+        if is_array(v) then
+            for i, item in ipairs(v) do
+                out[i] = serialize_value(item)
+            end
+        else
+            for k, item in pairs(v) do
+                out[tostring(k)] = serialize_value(item)
+            end
+        end
+        return { type = "table", value = out }
+    end
+
     local ok_repr, repr = pcall(tostring, v)
     return { type = "opaque", repr = ok_repr and repr or "?" }
 end

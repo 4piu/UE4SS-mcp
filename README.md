@@ -70,5 +70,5 @@ Every list-shaped tool is paginated (`{items, returned, total_matched, truncated
 ## Known limitations
 
 - **A mod's first load needs a human.** `enable_mod` + `reload_mod` can't start a mod UE4SS has never loaded — click "Restart All Mods" in the UE4SS console (or relaunch) once, then `reload_mod` works.
-- **A broad live query can stall the game.** `find_object` on `Actor`/`UObject`, or `dump_and_index`'s `objects`/`sdk`/`uht` kinds, run an unbounded native scan on the game thread — pagination bounds the response, not the scan itself.
-- **`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks argument *count* but not *type*.
+- **A broad live query can stall the game, or on some builds crash it.** `find_object` on `Actor`/`UObject`, or `dump_and_index`'s `objects`/`sdk`/`uht` kinds, run an unbounded native scan on the game thread — pagination bounds the response, not the scan itself.
+- **`describe_object`/`call_function`/`exec_lua` can crash the game with no diagnostics.** UE4SS checks a UFunction call's argument *count* but not *type*; reading a property's value, or calling any undocumented/guessed method on a reflected wrapper object, is itself a native call that isn't guaranteed safe on every engine build. None of this is catchable from Lua.

@@ -293,6 +293,17 @@ def describe_object(handle: str, limit: int | None = None, cursor: str | None = 
     actual signature before you risk a call_function/exec_lua call with
     a wrong-type argument (see call_function's docstring for why that
     matters: it isn't just a clean error).
+
+    DANGER, confirmed live: reading a property's value is itself a
+    native reflection call, and on a game whose engine build doesn't
+    match what UE4SS expects (a modified/forked engine, not just an
+    unsupported UE4SS version) that read can be an out-of-bounds native
+    access that crashes the whole process with no catchable Lua error
+    and no crash dump -- same failure mode as call_function's DANGER,
+    but here there's no argument of yours to get right; the risk is in
+    the target object/build itself. If a describe_object call never
+    returns, that's a real possibility, not just a slow query. `limit=1`
+    narrows which property faulted, but can't prevent the crash.
     """
     return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor})
 
@@ -464,7 +475,9 @@ def dump_and_index(kind: str, game_install_path: str | None = None) -> dict:
     the game thread and their cost scales with how much is currently
     loaded -- "objects" and "sdk" in particular can take a long time (or
     even freeze the game for its duration) in a large, densely-loaded
-    game. Prefer "actors" when it's enough for what you need.
+    game, and on some builds "sdk" has crashed the process outright with
+    no output and no diagnostics rather than just running long. Prefer
+    "actors" when it's enough for what you need.
 
     `game_install_path` defaults to whatever was last passed to
     install_bridge_mod in this session (the dump files land in that same
@@ -529,6 +542,17 @@ def exec_lua(code: str) -> dict:
     makes: a wrong-type (not wrong-count) argument for a non-primitive
     parameter can crash the whole game with no catchable error and no
     crash dump. See call_function's docstring.
+
+    DANGER, confirmed live, and broader than the above: this also
+    applies to calling ANY undocumented or guessed method on a UE4SS
+    reflected wrapper object (a `Property`/`Struct`/`Function`/`Class`
+    you got from `ForEachProperty`/`ForEachFunction`/`GetClass()` etc.),
+    not just to a UFunction you invoke directly. Wrapping the call in
+    `pcall` does not help -- an unknown method dispatched against one of
+    these can crash the whole process with no catchable error, the same
+    as a wrong-type UFunction argument. Only call methods you've
+    confirmed are real, documented UE4SS API, never ones you're guessing
+    might exist.
     """
     return _bridge_request("exec_lua", {"code": code})
 
