@@ -45,6 +45,14 @@
   its companion native module (`ue4ssmcp_pipe.dll`) stays locked in
   memory while loaded. Close the game before calling `install_bridge_mod`
   again, then relaunch.
+- The bridge (all live tools) needs UE4SS v4.0.0+ or a recent nightly:
+  its native module compiles in its own copy of UE4SS's Lua 5.4.7, and
+  v3.x embeds Lua 5.4.4 with a different `lua_State` layout. Docs/log/
+  crash tools are version-independent.
+- `enable_mod`/`disable_mod`/`install_bridge_mod` only edit
+  `<install>/Mods/mods.txt`. If they return `warnings`,
+  UE4SS-settings.ini redirects UE4SS (v4's `ControllingModsTxt`,
+  `+ModsFolderPaths`, or `ModsFolderPath`) and the edit may not apply.
 - This server won't tell you which UE4SS version/fork a game needs, or
   install UE4SS. Out of scope by design.
 

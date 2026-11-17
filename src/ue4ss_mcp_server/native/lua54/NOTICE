@@ -2,7 +2,13 @@ This directory is Lua 5.4.7's core source (lapi.c, lauxlib.c, lstate.c,
 etc.), vendored verbatim -- including luauser.c, a UE4SS-specific
 addition, not part of stock Lua -- from:
 
-    https://github.com/UE4SS-RE/RE-UE4SS/tree/main/deps/first/LuaRaw
+    https://github.com/UE4SS-RE/RE-UE4SS/tree/v4.0.0/deps/first/LuaRaw
+
+(last synced against the v4.0.0 tag; .c files come from its src/,
+headers from its include/). It must match the Lua UE4SS itself compiles
+in, so re-check (and rebuild ue4ssmcp_pipe.dll) on every UE4SS release
+that touches LuaRaw. UE4SS v3.x embeds Lua 5.4.4, whose internal layout
+differs from this 5.4.7 -- the bridge doesn't support v3.x.
 
 Vendored (rather than linked against UE4SS.dll) because UE4SS.dll does
 not export the Lua C API -- confirmed via `dumpbin /exports` against a

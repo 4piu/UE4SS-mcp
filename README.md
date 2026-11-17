@@ -6,6 +6,16 @@ introspection and control of a UE4SS-injected game, to help develop and
 debug Lua mods without hand-digging through docs or a live object graph
 with hundreds of thousands of entries.
 
+## Requirements
+
+- Windows (the bridge talks over a Windows named pipe).
+- For the live tools: **UE4SS v4.0.0 or newer** (or a recent nightly)
+  in the game. The bridge mod's native module compiles in its own copy
+  of UE4SS's Lua 5.4.7 and shares Lua state with UE4SS, so the two
+  must match. UE4SS v3.x embeds Lua 5.4.4, which lays its internals out
+  differently, so the bridge won't work there. The docs, log and crash
+  tools work with any version.
+
 ## Setup
 
 Add this to your MCP client's config (e.g. `mcp.json`) to run it

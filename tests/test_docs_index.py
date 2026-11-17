@@ -39,6 +39,37 @@ def test_build_index_lua_does_not_index_h2_scaffolding():
     assert "Inheritance" not in symbols
 
 
+def test_build_index_lua_indexes_h2_symbols_on_multi_function_pages():
+    # v4.0.0's modmanagement.md lists each function as an H2 under one
+    # H1, rather than one file per function.
+    entries = build_index(DOCS_SAMPLE, "lua")
+    symbols = {e.symbol: e for e in entries}
+
+    for name in ("RestartCurrentMod", "UninstallCurrentMod", "RestartMod", "UninstallMod"):
+        assert name in symbols, name
+        assert symbols[name].kind == "lua-function"
+        assert symbols[name].parent == "Mod Management Functions"
+        assert symbols[name].level == 2
+
+    # An H2 symbol's content stops at the next H2, not the next H3.
+    restart = symbols["RestartMod"]
+    assert "### Parameters" in restart.content
+    assert "UninstallMod" not in restart.content
+
+
+def test_build_index_lua_skips_prose_and_scaffolding_h3s():
+    # v4.0.0's delayedactions.md mixes real H3 symbols with H3 example
+    # titles, and modmanagement.md has H3 "Parameters"/"Example".
+    entries = build_index(DOCS_SAMPLE, "lua")
+    symbols = {e.symbol: e for e in entries}
+
+    assert "ExecuteInGameThreadWithDelay" in symbols
+    assert symbols["ExecuteInGameThreadWithDelay"].parent == "Delayed Actions"
+    assert "Simple Delay" not in symbols
+    assert "Example" not in symbols
+    assert "Parameters" not in symbols
+
+
 def test_build_index_cpp_indexes_macros_under_bp_macros_doc():
     entries = build_index(DOCS_SAMPLE, "cpp")
     symbols = {e.symbol: e for e in entries}

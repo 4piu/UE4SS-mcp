@@ -33,8 +33,9 @@ dist/
 
 # ...except the bridge mod's own prebuilt companion module -- checked in
 # deliberately so installing the mod needs no local C build step (it
-# only touches Lua's stable C API, so one prebuilt binary works across
-# every UE4SS version/game; see src/ue4ss_mcp_server/native/).
+# compiles in its own copy of UE4SS's Lua, so one prebuilt binary works
+# across every game on UE4SS versions sharing that Lua -- v4.0.0+ today;
+# see src/ue4ss_mcp_server/native/lua54/NOTICE).
 !src/ue4ss_mcp_server/bridge_mod_template/scripts/*.dll
 
 

@@ -164,7 +164,12 @@ def install_bridge_mod(game_install_path: str) -> dict:
     token) -- returns `{installed, mod_dir, bridge_id}`. `bridge_id`
     (stable across reinstalls of the same path) is what
     wait_running_bridge/list_running_bridge and every live tool's
-    `bridge_id` param refer to this game by.
+    `bridge_id` param refer to this game by. Same `warnings` caveat as
+    enable_mod (the bridge is enabled in this install's Mods/mods.txt).
+
+    Requires UE4SS v4.0.0 or newer (or a recent nightly): the bridge's
+    native module compiles in its own copy of UE4SS's Lua 5.4.7, and
+    v3.x builds embed Lua 5.4.4, whose internal layout differs.
     """
     global _last_install_path
     result = _install_bridge_mod(game_install_path)
@@ -191,6 +196,12 @@ def enable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
     Errors if `Mods/<mod_name>/` doesn't exist yet, rather than silently
     enabling a name that isn't a real mod. `game_install_path` defaults
     to whatever was last passed to install_bridge_mod in this session.
+
+    Only `<game_install_path>/Mods/mods.txt` is edited. If the result has
+    `warnings`, UE4SS-settings.ini redirects UE4SS elsewhere (e.g. v4's
+    `ControllingModsTxt`, which makes UE4SS ignore this mods.txt
+    entirely) -- the edit may not take effect; read them before relying
+    on it.
     """
     install_dir = game_install_path or (str(_last_install_path) if _last_install_path else None)
     if install_dir is None:
@@ -203,7 +214,8 @@ def disable_mod(mod_name: str, game_install_path: str | None = None) -> dict:
     """Disable a mod in mods.txt. Doesn't require the mod's files to
     still exist -- also useful for ruling a mod out as the cause of a
     problem, or turning one off before removing it. `game_install_path`
-    defaults to whatever was last passed to install_bridge_mod.
+    defaults to whatever was last passed to install_bridge_mod. Same
+    `warnings` caveat as enable_mod.
     """
     install_dir = game_install_path or (str(_last_install_path) if _last_install_path else None)
     if install_dir is None:

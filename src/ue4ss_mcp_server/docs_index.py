@@ -1,13 +1,18 @@
 """Symbol index over RE-UE4SS's lua-api/cpp-api docs for a cached ref.
 
-Real doc structure (confirmed against the actual v3.0.1 docs, not
-assumed): each file's H1 is the thing's own name (a class, a global
-function, a table). H2 headings are structural scaffolding shared across
-many files ("Parameters", "Methods", "Return Values") and are not
-themselves searchable symbols. Where a file has H3 headings (lua-api
-class methods, cpp-api macro entries), those *are* real sub-symbols worth
-indexing individually — see dev-notes/spec.md M1 and the docs_index tests
-for the concrete examples this rule is drawn from.
+Real doc structure (confirmed against the actual v3.0.1 and v4.0.0
+docs, not assumed): each file's H1 is the thing's own name (a class, a
+global function, a table) and is always indexed. Below that, heading
+*level* doesn't reliably separate symbols from scaffolding: most H2s are
+structural ("Parameters", "Methods", "Return Value"), but some pages put
+real symbols at H2 too -- `type()` / `ForEachProperty(function
+Callback)` on class pages (already in v3.0.1), and v4.0.0's
+modmanagement.md lists `RestartMod`/`UninstallMod`/... as H2s. Likewise
+most H3s are real sub-symbols (class methods, cpp-api macros), but
+v4.0.0's delayedactions.md also uses H3 for prose like "Simple Delay"
+or "Parameters". So H2/H3 are indexed by what the heading text looks
+like (see `_looks_like_symbol`), not by level -- see the docs_index
+tests for the concrete examples this rule is drawn from.
 """
 
 from __future__ import annotations
@@ -18,6 +23,26 @@ from pathlib import Path
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.*\S)\s*$")
 
+# A call signature: identifier immediately followed by "(" -- matches
+# "GetFullName()", "set(auto NewValue)", "Get() / get()", but not prose
+# with a parenthetical like "Parameters (overload #1)".
+_CALL_RE = re.compile(r"^[A-Za-z_][\w.:]*\(")
+_IDENT_RE = re.compile(r"^[A-Za-z_][\w.:]*$")
+# A bare identifier only counts if it's visibly code-shaped (snake_case,
+# camelCase/PascalCase compound, or an acronym run) -- otherwise
+# single-word scaffolding like "Parameters"/"Example"/"Inheritance"
+# would be indistinguishable from a real name.
+_CODEY_RE = re.compile(r"_|[a-z][A-Z]|[A-Z]{2}")
+
+
+def _looks_like_symbol(heading_text: str) -> bool:
+    """Whether an H2/H3 heading names a real symbol rather than being
+    structural scaffolding or prose. See the module docstring."""
+    text = heading_text.strip().strip("`:").strip()
+    if _CALL_RE.match(text):
+        return True
+    return bool(_IDENT_RE.match(text) and _CODEY_RE.search(text))
+
 
 @dataclass
 class DocEntry:
@@ -25,8 +50,8 @@ class DocEntry:
     kind: str
     file: str  # relative to docs/, forward-slash separated
     line: int  # 1-indexed
-    level: int  # 1 or 3 (H2 is never indexed, see module docstring)
-    parent: str | None  # nearest enclosing H1 symbol, for H3 entries
+    level: int  # 1, 2 or 3 (see module docstring for which H2/H3s count)
+    parent: str | None  # nearest enclosing H1 symbol, for H2/H3 entries
     summary: str
     content: str
 
@@ -35,14 +60,14 @@ def _kind_for_file(rel_path: Path, level: int) -> str:
     parts = rel_path.parts
     if parts[0] == "lua-api":
         if len(parts) >= 2 and parts[1] == "classes":
-            return "lua-method" if level == 3 else "lua-class"
+            return "lua-method" if level >= 2 else "lua-class"
         if len(parts) >= 2 and parts[1] == "global-functions":
             return "lua-function"
         if len(parts) >= 2 and parts[1] == "table-definitions":
             return "lua-table"
         return "lua-doc"
     if parts[0] == "cpp-api" or rel_path.name == "cpp-api.md":
-        return "cpp-entry" if level == 3 else "cpp-doc"
+        return "cpp-entry" if level >= 2 else "cpp-doc"
     return "doc"
 
 
@@ -68,20 +93,19 @@ def _index_file(docs_root: Path, path: Path) -> list[DocEntry]:
     entries: list[DocEntry] = []
     current_h1: str | None = None
     for idx, (line_idx, level, heading_text) in enumerate(headings):
-        if level == 2:
-            continue  # structural scaffolding only, not a symbol
+        if level == 1:
+            current_h1 = heading_text
+        elif not _looks_like_symbol(heading_text):
+            continue  # structural scaffolding or prose, not a symbol
 
         # section runs until the next heading of level <= this one
-        # (so an H1's content includes its nested H2/H3s; an H3's
-        # content stops at the next H3 or its parent H1/H2)
+        # (so an H1's content includes its nested H2/H3s; an H2/H3's
+        # content stops at the next heading at its own level or above)
         end = len(lines)
         for later_idx, later_level, _ in headings[idx + 1 :]:
             if later_level <= level:
                 end = later_idx
                 break
-
-        if level == 1:
-            current_h1 = heading_text
 
         entries.append(
             DocEntry(
@@ -90,7 +114,7 @@ def _index_file(docs_root: Path, path: Path) -> list[DocEntry]:
                 file=str(rel).replace("\\", "/"),
                 line=line_idx + 1,
                 level=level,
-                parent=current_h1 if level == 3 else None,
+                parent=current_h1 if level >= 2 else None,
                 summary=_first_summary_line(lines, line_idx + 1, end),
                 content="\n".join(lines[line_idx:end]).rstrip(),
             )
@@ -99,7 +123,7 @@ def _index_file(docs_root: Path, path: Path) -> list[DocEntry]:
 
 
 def build_index(docs_root: Path, api: str) -> list[DocEntry]:
-    """Index every H1/H3 symbol under docs_root for the given api ('lua'|'cpp')."""
+    """Index every H1 and symbol-like H2/H3 under docs_root for the given api ('lua'|'cpp')."""
     subdir_name = f"{api}-api"
     candidates: list[Path] = []
 

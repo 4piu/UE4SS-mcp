@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from ue4ss_mcp_server.bridge_registry import get_or_create_bridge, resolve_bridge_id
-from ue4ss_mcp_server.mod_management import set_mod_enabled
+from ue4ss_mcp_server.mod_management import mods_config_warnings, set_mod_enabled
 
 _TEMPLATE_DIR = Path(__file__).parent / "bridge_mod_template"
 _MOD_NAME = "UE4SSMCPBridge"
@@ -51,9 +51,13 @@ def install_bridge_mod(game_install_path: str) -> dict:
 
     mods_txt_updated = set_mod_enabled(mods_dir / "mods.txt", _MOD_NAME, True)
 
-    return {
+    result = {
         "installed": True,
         "mod_dir": str(mod_dir),
         "mods_txt_updated": mods_txt_updated,
         "bridge_id": resolve_bridge_id(game_install_path),
     }
+    warnings = mods_config_warnings(install_dir)
+    if warnings:
+        result["warnings"] = warnings
+    return result
