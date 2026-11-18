@@ -384,12 +384,23 @@ def find_object(
 
 
 @mcp.tool()
-def describe_object(handle: str, limit: int | None = None, cursor: str | None = None, bridge_id: str | None = None) -> dict:
+def describe_object(
+    handle: str,
+    limit: int | None = None,
+    cursor: str | None = None,
+    values: bool = True,
+    bridge_id: str | None = None,
+) -> dict:
     """Get the property map for one live object found via find_object.
 
     Properties are paginated (like every list-shaped tool here) since a
     single class can have dozens to hundreds of reflected properties.
-    Nested UObject-valued properties come back as new handles rather than
+    Inherited properties are included: the object's own class comes
+    first, then each superclass in turn, and every property carries a
+    `declared_in` field naming the class that declares it, plus its
+    `property_type` (e.g. "IntProperty", "ArrayProperty"). Struct-typed
+    properties come back as `{type: "struct"}` without their value --
+    read one through exec_lua if you need its fields. Nested UObject-valued properties come back as new handles rather than
     being inlined, so drill into them with another describe_object call
     instead of getting a recursive dump. A `handle` that no longer refers
     to a live object (destroyed actor, unloaded level, ...) returns
@@ -413,8 +424,18 @@ def describe_object(handle: str, limit: int | None = None, cursor: str | None = 
     the target object/build itself. If a describe_object call never
     returns, that's a real possibility, not just a slow query. `limit=1`
     narrows which property faulted, but can't prevent the crash.
+    `values=false` can: it returns only each property's name, type and
+    declaring class, reading no values -- safe on builds like that
+    (confirmed live: a forked UE 5.7 engine crashed reading an
+    EnumProperty's value, but listed all its metadata fine). List with
+    `values=false` first on an unfamiliar or modded engine, then page
+    to just the properties you need (`cursor` is a plain offset) with
+    values on.
     """
-    return _bridge_request("describe_object", {"handle": handle, "limit": limit, "cursor": cursor}, bridge_id=bridge_id)
+    params = {"handle": handle, "limit": limit, "cursor": cursor}
+    if not values:
+        params["values"] = False
+    return _bridge_request("describe_object", params, bridge_id=bridge_id)
 
 
 @mcp.tool()

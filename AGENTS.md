@@ -30,6 +30,10 @@
   undocumented/guessed method on any reflected wrapper object (not just
   a UFunction you invoke on purpose) carries the same risk — `pcall`
   doesn't help with any of this.
+- On an unfamiliar or modified engine, list with
+  `describe_object(values=false)` first (names/types/declaring class,
+  no value reads — safe), then read values only for the properties you
+  need. Inherited properties are included, most-derived class first.
 - To confirm your own mod actually ran, `search_log` for its `print()`
   output — `parse_log`'s structured fields won't show arbitrary text.
 - Call `wait_running_bridge` before any live tool — connecting is an

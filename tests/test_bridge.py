@@ -314,3 +314,14 @@ def test_send_request_works_again_after_a_reconnect():
     finally:
         client.disconnect()
         fake_mod2.close()
+
+
+def test_describe_object_sends_values_false_only_when_asked(monkeypatch):
+    from ue4ss_mcp_server import server
+
+    sent = []
+    monkeypatch.setattr(server, "_bridge_request", lambda op, params, **kw: sent.append((op, params)) or {})
+    server.describe_object("obj_1")
+    server.describe_object("obj_1", values=False)
+    assert "values" not in sent[0][1]
+    assert sent[1] == ("describe_object", {"handle": "obj_1", "limit": None, "cursor": None, "values": False})

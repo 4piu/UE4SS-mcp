@@ -439,6 +439,10 @@ local function op_describe_object(params)
 
     local limit = math.min(tonumber(params.limit) or 50, 200)
     local offset = tonumber(params.cursor) or 0
+    -- values=false: metadata only (name/type/declaring class), no value
+    -- reads at all -- the escape hatch for a game where a value read
+    -- itself can crash (see the DANGER note on the Python side).
+    local read_values = params.values ~= false
 
     local ok_type, ue_type = pcall(function() return obj:type() end)
     if ok_type and ue_type == "UFunction" then
@@ -447,21 +451,61 @@ local function op_describe_object(params)
         return true, result
     end
 
+    -- ForEachProperty only yields the properties a struct declares
+    -- itself, not inherited ones -- confirmed live: a Blueprint/
+    -- AngelScript subclass that adds no fields of its own enumerated as
+    -- empty (GitHub issue #1), and a PlayerController subclass showed 52
+    -- of its 214 properties. So walk the SuperStruct chain, most-derived
+    -- class first, tagging each property with the class that declares it.
+    -- Only names are enumerated across the whole chain; values are read
+    -- just for the requested page.
     local class = obj:GetClass()
     local props = {}
     local total = 0
-    class:ForEachProperty(function(prop)
-        total = total + 1
-        local idx = total - 1
-        if idx >= offset and #props < limit then
-            local ok_name, name = pcall(function() return prop:GetFName():ToString() end)
-            name = ok_name and name or "?"
-            local ok_val, value = pcall(function() return obj[name] end)
-            local serialized = ok_val and serialize_value(value) or { type = "error", repr = "unreadable" }
-            serialized.name = name
-            table.insert(props, serialized)
+    local struct = class
+    local depth = 0
+    while struct ~= nil and depth < 64 do
+        local ok_valid, valid = pcall(function() return struct:IsValid() end)
+        if not (ok_valid and valid) then
+            break
         end
-    end)
+        local ok_owner, owner = pcall(function() return struct:GetFName():ToString() end)
+        owner = ok_owner and owner or "?"
+        struct:ForEachProperty(function(prop)
+            total = total + 1
+            local idx = total - 1
+            if idx >= offset and #props < limit then
+                local ok_name, name = pcall(function() return prop:GetFName():ToString() end)
+                name = ok_name and name or "?"
+                local ok_ptype, prop_type = pcall(function() return prop:GetClass():GetFName():ToString() end)
+                prop_type = ok_ptype and prop_type or "?"
+                local serialized
+                if not read_values then
+                    serialized = {}
+                elseif prop_type == "StructProperty" then
+                    -- Never key-probe a struct wrapper: UE4SS resolves
+                    -- v.ToString / v.IsValid on one by searching the
+                    -- struct's own fields, which on a game whose engine
+                    -- layout doesn't match UE4SS's (a forked engine)
+                    -- hard-crashes the process -- confirmed live, GitHub
+                    -- issue #1. On a normal build that probe only ever
+                    -- yielded an opaque handle anyway, so report the type
+                    -- from metadata and leave the value to exec_lua.
+                    serialized = { type = "struct" }
+                else
+                    local ok_val, value = pcall(function() return obj[name] end)
+                    serialized = ok_val and serialize_value(value) or { type = "error", repr = "unreadable" }
+                end
+                serialized.name = name
+                serialized.property_type = prop_type
+                serialized.declared_in = owner
+                table.insert(props, serialized)
+            end
+        end)
+        local ok_super, super = pcall(function() return struct:GetSuperStruct() end)
+        struct = ok_super and super or nil
+        depth = depth + 1
+    end
 
     local next_offset = offset + #props
     local truncated = next_offset < total
