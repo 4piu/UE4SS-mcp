@@ -28,7 +28,7 @@ straight from GitHub via `uvx` — no clone needed:
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/4piu/UE4SS-mcp@v0.2.2",
+        "git+https://github.com/4piu/UE4SS-mcp@v0.2.3",
         "ue4ss-mcp-server"
       ]
     }
